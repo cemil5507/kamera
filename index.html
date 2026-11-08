@@ -49,7 +49,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #shutter:active i{transform:scale(.88)}
 
 /* Başlangıç ekranı */
-#start{position:fixed;inset:0;z-index:50;background:#0b0c0d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
+#start{position:fixed;inset:0;z-index:50;background:#0b0c0d;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
 #start img{width:96px;height:96px;border-radius:22px}
 #start h1{margin:0;font-size:26px}
 #start p{margin:0;color:var(--mut);max-width:34ch}
@@ -281,8 +281,10 @@ const PALETTE = ['#00FF1A', '#FFFFFF', '#FFD60A', '#FF9F0A', '#1E88E5', '#2F4BFF
 /* ============ Konum / adres ============ */
 const G = { lat: null, lon: null, acc: null, alt: null, addr: { street: '', district: '', city: '', country: '' }, lastGeo: null, lastGeoT: 0, busy: false };
 
+let geoOn = false;
 function startGeo() {
-  if (!navigator.geolocation) return;
+  if (!navigator.geolocation || geoOn) return;
+  geoOn = true;
   navigator.geolocation.watchPosition(p => {
     G.lat = p.coords.latitude; G.lon = p.coords.longitude; G.acc = p.coords.accuracy; G.alt = p.coords.altitude;
     updateBar(); drawOverlay(); geocode();
@@ -397,7 +399,10 @@ function updateBar() {
   $('#barsec').textContent = (S.showSector && S.sector) ? '● ' + S.sector : '';
   $('#acc').textContent = G.acc != null ? `± ${Math.round(G.acc)}m` : 'Konum aranıyor…';
   $('#alt').textContent = G.alt != null ? `▲ ${Math.round(G.alt)} m` : '▲ – m';
-  $('#calib').style.display = (gotOrientation && (hdgAcc < 0 || hdgAcc > 30)) ? 'block' : 'none';
+  const cb = $('#calib');
+  if (needsGesture && !gotOrientation) { cb.textContent = 'Pusula için ekrana bir kez dokun'; cb.style.display = 'block'; }
+  else if (gotOrientation && (hdgAcc < 0 || hdgAcc > 30)) { cb.textContent = 'Pusula kalibrasyonu: telefonu 8 şeklinde çevirin'; cb.style.display = 'block'; }
+  else cb.style.display = 'none';
 }
 
 /* ============ Filigran ============ */
@@ -849,31 +854,42 @@ $('#setbtn').onclick = () => { render(); openSheet('#setsheet'); };
 $('#galbtn').onclick = () => { path = []; renderGallery(); openSheet('#galsheet'); };
 $('#shutter').onclick = shoot;
 
+const needsGesture = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
+let compassOn = false, booting = false, booted = false;
+async function ensureCompass() {
+  if (compassOn) return;
+  compassOn = true;
+  const ok = await startCompass();
+  if (!ok) toast('Pusula izni verilmedi, yön görünmeyecek');
+}
+function showStart(msg) { $('#starterr').textContent = msg; $('#start').style.display = 'flex'; }
 async function boot() {
-  const err = $('#starterr'); err.textContent = '';
-  if (location.protocol === 'file:' || !window.isSecureContext) {
-    err.textContent = 'Bu dosya doğrudan açılamaz. Uygulamanın https:// ile başlayan web adresinden açılması gerekir (README).'; return;
-  }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    err.textContent = 'Bu tarayıcı kamerayı desteklemiyor. Safari ile https adresinden aç.'; return;
-  }
-  const compassP = startCompass();             // iOS pusula izni dokunuş anında istenmeli: hiçbir şeyden önce çağrılır
-  const compass = await compassP;
-  startGeo();
-  try { await openDB(); } catch (e) { err.textContent = 'Depolama açılamadı (özel gezinme kapalı olmalı).'; return; }
+  if (booting || booted) return;
+  booting = true;
   try {
-    await openCamera();
-    await findLenses();                         // etiketler izinden sonra görünür
-  } catch (e) {
-    err.textContent = 'Kamera izni verilmedi. Safari Ayarları > Kamera bölümünden izin ver.'; return;
-  }
-  $('#start').style.display = 'none';
-  if (!compass) toast('Pusula izni verilmedi, yön görünmeyecek');
-  loadLogo(); renderZoom(); drawOverlay();
-  try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
-  const all = await dbAll();
-  if (all.length) { const last = all.filter(r => !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
-  loop();
+    if (location.protocol === 'file:' || !window.isSecureContext) {
+      showStart('Bu dosya doğrudan açılamaz. Uygulamanın https:// ile başlayan web adresinden açılması gerekir.'); return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showStart('Bu tarayıcı kamerayı desteklemiyor. Safari ile aç.'); return;
+    }
+    if (!needsGesture) ensureCompass();          // iPhone dışında izin gerekmez; iPhone'da ilk dokunuşta açılır
+    startGeo();
+    try { await openDB(); } catch (e) { showStart('Depolama açılamadı (özel gezinme kapalı olmalı).'); return; }
+    try {
+      await openCamera();
+      await findLenses();
+    } catch (e) {
+      showStart('Kamera açılamadı. Safari Ayarları > Kamera bölümünden izin ver, sonra Başlat\'a dokun.'); return;
+    }
+    $('#start').style.display = 'none';
+    loadLogo(); renderZoom(); drawOverlay();
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
+    const all = await dbAll();
+    if (all.length) { const last = all.filter(r => !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
+    booted = true;
+    loop();
+  } finally { booting = false; }
 }
 function loop() { drawStrip(); updateBar(); requestAnimationFrame(loop); }
 setInterval(drawOverlay, 1000);
@@ -881,7 +897,9 @@ addEventListener('resize', drawOverlay);
 document.addEventListener('visibilitychange', async () => {
   if (!document.hidden && stream && (!track || track.readyState === 'ended')) { try { await openCamera(lenses[lens]); renderZoom(); } catch (e) {} }
 });
-$('#go').onclick = boot;
+$('#go').onclick = () => { if (needsGesture) ensureCompass(); boot(); };
+document.addEventListener('pointerdown', () => { if (needsGesture && !compassOn) ensureCompass(); }, true);
+boot();
 </script>
 </body>
 </html>
