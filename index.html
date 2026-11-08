@@ -16,7 +16,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:15px/1.35 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
-#app{position:fixed;inset:0;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
 #head{flex:none}
 #strip{display:block;width:100%;height:58px}
 #bar{height:30px;background:var(--g);color:#000;display:flex;align-items:center;gap:8px;padding:0 10px;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden}
@@ -37,8 +37,12 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #zoomrow button.on{color:var(--yel)}
 #zoomrow button:disabled{opacity:.35}
 #modes{display:flex;gap:44px;font-size:19px;font-weight:700}
+#modes button{font-weight:700;font-size:inherit;padding:6px 4px}
 #modes .on{color:var(--yel)}
-#modes .off{color:#777}
+#modes .off{color:#8a8a8a}
+#shutter.vid i{background:#e53935}
+#shutter.rec i{width:30px;height:30px;border-radius:7px;background:#e53935}
+#recchip{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(210,0,0,.88);padding:5px 12px;border-radius:99px;font-weight:700;font-size:13px;display:none;pointer-events:none}
 #row{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 26px}
 #galbtn,#setbtn{width:48px;height:48px;border-radius:9px;display:grid;place-items:center;background:rgba(255,255,255,.12);overflow:hidden}
 #setbtn{background:none}
@@ -47,6 +51,18 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 #shutter{width:74px;height:74px;border-radius:50%;border:4px solid #fff;display:grid;place-items:center}
 #shutter i{width:58px;height:58px;border-radius:50%;background:#fff;transition:transform .08s}
 #shutter:active i{transform:scale(.88)}
+
+/* Yatay tutuş: pusula ve fotoğraf soldaki geniş alanda, düğmeler sağda */
+@media (orientation:landscape){
+  #app{display:grid;grid-template-columns:1fr 132px;grid-template-rows:auto 1fr}
+  #head{grid-column:1;grid-row:1}
+  #stage{grid-column:1;grid-row:2;align-self:center;aspect-ratio:4/3;
+    width:min(calc(100vw - 132px - env(safe-area-inset-left) - env(safe-area-inset-right)),calc((100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 1.3333))}
+  #ctl{grid-column:2;grid-row:1 / span 2;flex-direction:column;justify-content:space-evenly}
+  #zoomrow{flex-direction:column;border-radius:28px;padding:8px 5px}
+  #row{flex-direction:column;gap:12px;padding:0}
+  #modes{gap:10px;font-size:15px}
+}
 
 /* Başlangıç ekranı */
 #start{position:fixed;inset:0;z-index:50;background:#0b0c0d;display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
@@ -89,8 +105,9 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transf
 
 /* Galeri */
 .crumbs{padding:10px 16px;font-size:13px;color:var(--mut);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.crumbs a{color:var(--blue);cursor:pointer}
-.item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.crumbs button{color:var(--blue);font-weight:600;padding:6px 4px;cursor:pointer}
+.item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+button.item{width:100%;text-align:left;color:inherit;font:inherit;background:none}
 .item .ic{width:56px;height:56px;border-radius:8px;background:#2a2d30;display:grid;place-items:center;overflow:hidden;flex:none;font-size:26px}
 .item img{width:100%;height:100%;object-fit:cover}
 .item .nm{flex:1;min-width:0;word-break:break-all;font-size:13px}
@@ -99,7 +116,8 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transf
 .acts{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 #viewer{position:fixed;inset:0;z-index:60;background:#000;display:none;flex-direction:column}
 #viewer.open{display:flex}
-#viewer img{flex:1;min-height:0;object-fit:contain;width:100%}
+#viewer img,#viewer video{flex:1;min-height:0;object-fit:contain;width:100%;background:#000}
+#viewer video{display:none}
 #viewer .vb{display:flex;gap:10px;justify-content:center;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
 </style>
 </head>
@@ -125,12 +143,13 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transf
     <button id="tagbtn" aria-label="Etiketler"><svg viewBox="0 0 24 24"><path d="M21.4 11.6l-9-9A2 2 0 0 0 11 2H4a2 2 0 0 0-2 2v7c0 .5.2 1 .6 1.4l9 9a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8zM6.5 8A1.5 1.5 0 1 1 8 6.5 1.5 1.5 0 0 1 6.5 8z"/></svg></button>
     <div id="focus"></div>
     <div id="toast"></div>
+    <div id="recchip"></div>
     <div id="flash"></div>
   </div>
 
   <div id="ctl">
     <div id="zoomrow"></div>
-    <div id="modes"><span class="off" title="Bu web sürümünde video yok">Video</span><span class="on">Photo</span></div>
+    <div id="modes"><button type="button" id="mvid" class="off">Video</button><button type="button" id="mpho" class="on">Photo</button></div>
     <div id="row">
       <button id="galbtn" aria-label="Galeri"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
       <button id="shutter" aria-label="Çek"><i></i></button>
@@ -164,7 +183,7 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transf
   <div class="sh-body" id="galbody"></div>
 </div>
 
-<div id="viewer"><img id="vimg" alt=""><div class="vb"><button class="btn" id="vshare">Paylaş</button><button class="btn gray" id="vclose">Kapat</button></div></div>
+<div id="viewer"><img id="vimg" alt=""><video id="vvid" controls playsinline></video><div class="vb"><button class="btn" id="vshare">Paylaş</button><button class="btn gray" id="vclose">Kapat</button></div></div>
 
 <script>
 // Sıkıştırmasız (store) zip yazıcı. Ek kütüphane gerekmez. Türkçe dosya adları için UTF-8 bayrağı açık.
@@ -345,12 +364,12 @@ async function startCompass() {
   try {
     if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
       const r = await DeviceOrientationEvent.requestPermission();
-      if (r !== 'granted') return false;
+      if (r !== 'granted') return 'denied';
     }
-  } catch (e) { return false; }
+  } catch (e) { return 'error'; }          // çoğunlukla "dokunuş gerekli": tekrar denenir
   window.addEventListener('deviceorientationabsolute', onOrient, true);
   window.addEventListener('deviceorientation', onOrient, true);
-  return true;
+  return 'granted';
 }
 
 const strip = $('#strip'), sctx = strip.getContext('2d');
@@ -381,17 +400,17 @@ function drawStrip() {
   stripPaint(sctx, w, h, heading);
 }
 // Fotoğrafın üstüne pusula şeridi + yeşil bilgi çubuğu basar (ekrandakinin aynısı)
-function paintCompass(c, W, hd, acc, alt) {
-  const k = W / 430;
+function paintCompass(c, W, H, hd, acc, alt) {
+  const k = Math.min(W, H) / 430, wd = W / k;      // tasarım birimi: kısa kenar 430
   c.save(); c.scale(k, k);
-  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(0, 0, 430, 58);
-  stripPaint(c, 430, 58, hd);
-  c.fillStyle = '#00f51a'; c.fillRect(0, 58, 430, 30);
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(0, 0, wd, 58);
+  stripPaint(c, wd, 58, hd);
+  c.fillStyle = '#00f51a'; c.fillRect(0, 58, wd, 30);
   c.fillStyle = '#000'; c.textBaseline = 'middle'; c.font = '700 14px -apple-system,Arial,sans-serif';
   c.textAlign = 'left'; c.fillText(`${Math.round(hd) % 360}° ${cardinal(hd)}`, 10, 73);
-  c.textAlign = 'center'; if (S.showSector && S.sector) c.fillText('● ' + S.sector, 215, 73);
+  c.textAlign = 'center'; if (S.showSector && S.sector) c.fillText('● ' + S.sector, wd / 2, 73);
   c.textAlign = 'right';
-  c.fillText((acc != null ? `± ${Math.round(acc)}m   ` : '') + (alt != null ? `▲ ${Math.round(alt)} m` : ''), 420, 73);
+  c.fillText((acc != null ? `± ${Math.round(acc)}m   ` : '') + (alt != null ? `▲ ${Math.round(alt)} m` : ''), wd - 10, 73);
   c.restore();
 }
 function updateBar() {
@@ -452,15 +471,15 @@ function wrap(ctx, text, maxW) {
 }
 // Önizleme ve fotoğraf aynı kodu kullanır
 function paint(ctx, W, H, lines) {
-  const m = S.margin * W, left = S.pos.endsWith('l'), right = S.pos.endsWith('r'), top = S.pos.startsWith('t');
+  const U = Math.min(W, H), m = S.margin * U, left = S.pos.endsWith('l'), right = S.pos.endsWith('r'), top = S.pos.startsWith('t');
   if (logoImg && S.logo) {
-    const lw = W * S.logoScale, lh = lw * logoImg.height / logoImg.width, lm = W * 0.02, lp = S.logoPos;
+    const lw = U * S.logoScale, lh = lw * logoImg.height / logoImg.width, lm = U * 0.02, lp = S.logoPos;
     const lx = lp.endsWith('l') ? lm : lp.endsWith('r') ? W - lm - lw : (W - lw) / 2;
     const ly = lp.startsWith('t') ? lm : H - lm - lh;
     ctx.globalAlpha = S.logoOp; ctx.drawImage(logoImg, lx, ly, lw, lh); ctx.globalAlpha = 1;
   }
   if (!lines.length) return;
-  const fpx = Math.max(6, W * SIZES[S.size][1]), padd = fpx * 0.6, gap = fpx * 0.12;
+  const fpx = Math.max(6, U * SIZES[S.size][1]), padd = fpx * 0.6, gap = fpx * 0.12;
   ctx.font = `${S.bold ? 'bold ' : ''}${fpx}px ${S.font}`;
   ctx.textBaseline = 'top';
   const maxTextW = W - 2 * m - 2 * padd;
@@ -527,6 +546,7 @@ function applyZoom(z) {
   renderZoom();
 }
 async function setLens(name, z) {
+  if (rec) { toast('Kayıt sırasında lens değişmez'); return; }
   if (name !== lens) {
     const id = lenses[name];
     if (!id) return applyZoom(z);
@@ -601,31 +621,38 @@ function baseName() {
 /* ============ Çekim ============ */
 let shooting = false;
 function toBlob(c, q) { return new Promise(r => c.toBlob(r, 'image/jpeg', q)); }
+function stageAspect() { const r = $('#stage').getBoundingClientRect(); return r.width > r.height ? 4 / 3 : 3 / 4; }
+function cropRect(A) {
+  const vw = vid.videoWidth, vh = vid.videoHeight;
+  let sw, sh;
+  if (vw / vh > A) { sh = vh; sw = vh * A; } else { sw = vw; sh = vw / A; }
+  sw /= digital; sh /= digital;
+  return [(vw - sw) / 2, (vh - sh) / 2, sw, sh];
+}
+async function nextName(dir, base) {
+  const all = await dbAll(); let n = 0;
+  all.forEach(r => { if (r.dir === dir && r.name.startsWith(base + '_')) { const m = parseInt(r.name.slice(base.length + 1), 10); if (m > n) n = m; } });
+  return n + 1;
+}
 async function shoot() {
   if (shooting || !vid.videoWidth) return;
   shooting = true;
   const fl = $('#flash'); fl.style.opacity = .8; setTimeout(() => fl.style.opacity = 0, 100);
   try {
     const now = new Date(), snap = { lat: G.lat, lon: G.lon, addr: { ...G.addr } }, hdg = heading, accS = G.acc, altS = G.alt;
-    const vw = vid.videoWidth, vh = vid.videoHeight;
-    let sw, sh;
-    if (vw / vh > 3 / 4) { sh = vh; sw = vh * 3 / 4; } else { sw = vw; sh = vw * 4 / 3; }
-    sw /= digital; sh /= digital;
-    const sx = (vw - sw) / 2, sy = (vh - sh) / 2, ow = Math.round(Math.min(sw, 2160)), oh = Math.round(ow * 4 / 3);
+    const A = stageAspect(), [sx, sy, sw, sh] = cropRect(A);
+    let ow, oh;
+    if (A >= 1) { ow = Math.round(Math.min(sw, 2880)); oh = Math.round(ow / A); } else { oh = Math.round(Math.min(sh, 2880)); ow = Math.round(oh * A); }
     const c = el('canvas'); c.width = ow; c.height = oh;
     const x = c.getContext('2d');
     x.drawImage(vid, sx, sy, sw, sh, 0, 0, ow, oh);
     const clean = S.dual ? await toBlob(c, S.quality) : null;
     paint(x, ow, oh, buildLines(now, hdg, snap));
-    if (S.compassPhoto && gotOrientation) paintCompass(x, ow, hdg, accS, altS);
+    if (S.compassPhoto && gotOrientation) paintCompass(x, ow, oh, hdg, accS, altS);
     const stamped = await toBlob(c, S.quality);
 
     const dir = dayFolder(now) + (S.sector ? '/' + sanitize(S.sector) : '');
-    const base = baseName(), all = await dbAll();
-    let n = 0;
-    all.forEach(r => { if (r.dir === dir && r.name.startsWith(base + '_')) { const m = parseInt(r.name.slice(base.length + 1), 10); if (m > n) n = m; } });
-    n++;
-    const name = `${base}_${n}`;
+    const base = baseName(), n = await nextName(dir, base), name = `${base}_${n}`;
     await dbPut({ dir, name: name + '.jpg', blob: stamped, ts: now.getTime() });
     if (clean) await dbPut({ dir, name: name + '_temiz.jpg', blob: clean, ts: now.getTime() });
     setThumb(stamped);
@@ -635,6 +662,77 @@ async function shoot() {
   }
   shooting = false;
 }
+
+/* ============ Video (yazı ve pusula şeridi videoya basılır) ============ */
+let mode = 'photo', rec = null, micStream = null;
+async function getMic() {
+  if (micStream) return;
+  try { micStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { toast('Mikrofon izni yok, video sessiz kaydedilir'); }
+}
+function setMode(m) {
+  if (rec) return;
+  mode = m;
+  $('#mvid').className = m === 'video' ? 'on' : 'off';
+  $('#mpho').className = m === 'photo' ? 'on' : 'off';
+  $('#shutter').className = m === 'video' ? 'vid' : '';
+  if (m === 'video') getMic();
+}
+function pickMime() {
+  if (!window.MediaRecorder) return null;
+  for (const t of ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']) {
+    try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (e) {}
+  }
+  return '';
+}
+async function startRec() {
+  const mime = pickMime();
+  if (mime === null) { toast('Bu tarayıcı video kaydını desteklemiyor'); return; }
+  if (!vid.videoWidth) return;
+  const A = stageAspect(), ow = A >= 1 ? 1440 : 1080, oh = A >= 1 ? 1080 : 1440;
+  const c = el('canvas'); c.width = ow; c.height = oh;
+  const x = c.getContext('2d');
+  const R = rec = { chunks: [], stop: false, t0: Date.now(), mime, dir: dayFolder(new Date()) + (S.sector ? '/' + sanitize(S.sector) : ''), base: baseName() };
+  let last = 0;
+  const frame = ts => {
+    if (!rec || R.stop) return;
+    if (ts - last > 30) {
+      last = ts;
+      const [sx, sy, sw, sh] = cropRect(A);
+      x.drawImage(vid, sx, sy, sw, sh, 0, 0, ow, oh);
+      paint(x, ow, oh, buildLines(new Date(), heading));
+      if (S.compassPhoto && gotOrientation) paintCompass(x, ow, oh, heading, G.acc, G.alt);
+    }
+    requestAnimationFrame(frame);
+  };
+  frame(0);
+  const cs = c.captureStream(30);
+  if (micStream) micStream.getAudioTracks().forEach(t => cs.addTrack(t));
+  try {
+    R.mr = new MediaRecorder(cs, mime ? { mimeType: mime, videoBitsPerSecond: 6000000 } : { videoBitsPerSecond: 6000000 });
+  } catch (e) { rec = null; toast('Video başlatılamadı: ' + e.message); return; }
+  R.mr.ondataavailable = e => { if (e.data && e.data.size) R.chunks.push(e.data); };
+  R.mr.onstop = () => finishRec(R);
+  R.mr.start(1000);
+  $('#shutter').className = 'vid rec';
+  const chip = $('#recchip'); chip.style.display = 'block';
+  R.timer = setInterval(() => { const t = Math.floor((Date.now() - R.t0) / 1000); chip.textContent = '● ' + pad2(Math.floor(t / 60)) + ':' + pad2(t % 60); }, 250);
+  chip.textContent = '● 00:00';
+}
+function stopRec() { if (!rec) return; rec.stop = true; try { rec.mr.stop(); } catch (e) {} }
+async function finishRec(R) {
+  clearInterval(R.timer); $('#recchip').style.display = 'none';
+  rec = null; $('#shutter').className = mode === 'video' ? 'vid' : '';
+  try {
+    const type = (R.mr.mimeType || R.mime || 'video/mp4').split(';')[0];
+    const blob = new Blob(R.chunks, { type });
+    if (!blob.size) throw new Error('boş kayıt');
+    const ext = type.includes('mp4') ? 'mp4' : 'webm', n = await nextName(R.dir, R.base), name = `${R.base}_${n}.${ext}`;
+    await dbPut({ dir: R.dir, name, blob, ts: Date.now() });
+    toast('Video kaydedildi: ' + name);
+  } catch (e) { toast('Video kaydedilemedi: ' + (e && e.message || e)); }
+}
+function onShutter() { if (mode === 'video') { rec ? stopRec() : startRec(); } else shoot(); }
 function setThumb(blob) {
   const u = URL.createObjectURL(blob), b = $('#galbtn');
   b.innerHTML = ''; b.append(el('img', { src: u }));
@@ -771,8 +869,8 @@ async function renderGallery() {
   const all = await dbAll(), cr = $('#crumbs'), body = $('#galbody');
   cr.innerHTML = ''; body.innerHTML = '';
   const go = n => { path = path.slice(0, n); renderGallery(); };
-  cr.append(el('a', { textContent: 'Kayıtlar', onclick: () => go(0) }));
-  path.forEach((p, i) => { cr.append(' / '); cr.append(el('a', { textContent: p, onclick: () => go(i + 1) })); });
+  cr.append(el('button', { type: 'button', textContent: 'Kayıtlar', onclick: () => go(0) }));
+  path.forEach((p, i) => { cr.append(' / '); cr.append(el('button', { type: 'button', textContent: p, onclick: () => go(i + 1) })); });
 
   const here = path.join('/');
   const inside = all.filter(r => here === '' || r.dir === here || r.dir.startsWith(here + '/'));
@@ -803,11 +901,13 @@ async function renderGallery() {
   body.append(acts);
 
   [...folders.entries()].sort((a, b) => b[1] - a[1]).forEach(([f]) => {
-    body.append(el('div', { className: 'item', onclick: () => { path.push(f); renderGallery(); } }, [
+    body.append(el('button', { type: 'button', className: 'item', onclick: () => { path.push(f); renderGallery(); } }, [
       el('div', { className: 'ic', textContent: '📁' }), el('div', { className: 'nm', textContent: f })]));
   });
   files.sort((a, b) => a.ts - b.ts || a.name.localeCompare(b.name)).forEach(r => {
-    const ic = el('div', { className: 'ic' }); ic.append(el('img', { src: URL.createObjectURL(r.blob) }));
+    const isVid = /\.(mp4|webm|mov)$/i.test(r.name);
+    const ic = el('div', { className: 'ic', onclick: () => openViewer(r) });
+    if (isVid) ic.textContent = '▶'; else ic.append(el('img', { src: URL.createObjectURL(r.blob) }));
     body.append(el('div', { className: 'item' }, [ic,
       el('div', { className: 'nm', onclick: () => openViewer(r) }, [r.name, el('small', { textContent: (r.blob.size / 1048576).toFixed(1) + ' MB' })]),
       el('button', { className: 'x', textContent: '✕', onclick: async () => { if (confirm('Silinsin mi?')) { await dbDel(r.id); renderGallery(); } } })]));
@@ -844,23 +944,40 @@ function doShare() {
   }
 }
 let viewing = null;
-function openViewer(r) { viewing = r; $('#vimg').src = URL.createObjectURL(r.blob); $('#viewer').classList.add('open'); }
-$('#vclose').onclick = () => $('#viewer').classList.remove('open');
-$('#vshare').onclick = () => viewing && shareBlob(viewing.blob, viewing.name, 'image/jpeg');
+function openViewer(r) {
+  viewing = r;
+  const vv = $('#vvid'), vi = $('#vimg'), u = URL.createObjectURL(r.blob);
+  if (/\.(mp4|webm|mov)$/i.test(r.name)) { vi.style.display = 'none'; vv.style.display = 'block'; vv.src = u; vv.play().catch(() => {}); }
+  else { vv.pause(); vv.style.display = 'none'; vi.style.display = 'block'; vi.src = u; }
+  $('#viewer').classList.add('open');
+}
+$('#vclose').onclick = () => { $('#vvid').pause(); $('#viewer').classList.remove('open'); };
+$('#vshare').onclick = () => viewing && shareBlob(viewing.blob, viewing.name, viewing.blob.type || 'image/jpeg');
 
 /* ============ Başlatma ============ */
 $('#tagbtn').onclick = () => { renderTags(); openSheet('#tagsheet'); };
 $('#setbtn').onclick = () => { render(); openSheet('#setsheet'); };
-$('#galbtn').onclick = () => { path = []; renderGallery(); openSheet('#galsheet'); };
-$('#shutter').onclick = shoot;
+$('#galbtn').onclick = () => {
+  path = []; openSheet('#galsheet');
+  $('#galbody').textContent = 'Yükleniyor…';
+  renderGallery().catch(e => { $('#galbody').textContent = 'Kayıtlar açılamadı: ' + (e && e.message || e); });
+};
+$('#shutter').onclick = onShutter;
+$('#mvid').onclick = () => setMode('video');
+$('#mpho').onclick = () => setMode('photo');
 
 const needsGesture = typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function';
-let compassOn = false, booting = false, booted = false;
+let compassOn = false, compassBusy = false, booting = false, booted = false;
 async function ensureCompass() {
-  if (compassOn) return;
-  compassOn = true;
-  const ok = await startCompass();
-  if (!ok) toast('Pusula izni verilmedi, yön görünmeyecek');
+  if (compassOn || compassBusy) return;
+  compassBusy = true;
+  const r = await startCompass();
+  compassBusy = false;
+  if (r === 'granted') compassOn = true;
+  else if (r === 'denied') {
+    compassOn = true;
+    toast('Pusula izni reddedildi. Uygulamayı tamamen kapatıp aç ve "İzin Ver"i seç.');
+  }
 }
 function showStart(msg) { $('#starterr').textContent = msg; $('#start').style.display = 'flex'; }
 async function boot() {
@@ -886,7 +1003,7 @@ async function boot() {
     loadLogo(); renderZoom(); drawOverlay();
     try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
     const all = await dbAll();
-    if (all.length) { const last = all.filter(r => !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
+    if (all.length) { const last = all.filter(r => r.name.endsWith('.jpg') && !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
     booted = true;
     loop();
   } finally { booting = false; }
@@ -894,11 +1011,15 @@ async function boot() {
 function loop() { drawStrip(); updateBar(); requestAnimationFrame(loop); }
 setInterval(drawOverlay, 1000);
 addEventListener('resize', drawOverlay);
+addEventListener('orientationchange', () => setTimeout(drawOverlay, 350));
+if (window.ResizeObserver) new ResizeObserver(() => drawOverlay()).observe($('#stage'));
+addEventListener('error', e => toast('Hata: ' + e.message));
+addEventListener('unhandledrejection', e => toast('Hata: ' + ((e.reason && e.reason.message) || e.reason)));
 document.addEventListener('visibilitychange', async () => {
   if (!document.hidden && stream && (!track || track.readyState === 'ended')) { try { await openCamera(lenses[lens]); renderZoom(); } catch (e) {} }
 });
 $('#go').onclick = () => { if (needsGesture) ensureCompass(); boot(); };
-document.addEventListener('pointerdown', () => { if (needsGesture && !compassOn) ensureCompass(); }, true);
+['click', 'touchend'].forEach(ev => document.addEventListener(ev, () => { if (needsGesture && !compassOn) ensureCompass(); }, true));
 boot();
 </script>
 </body>
