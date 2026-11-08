@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Saha Kamera">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#000000">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<title>Saha Kamera</title>
+<style>
+:root{--g:#00f51a;--bg:#000;--panel:#16181a;--line:#2a2d30;--tx:#f2f2f2;--mut:#9aa0a6;--blue:#1e88e5;--yel:#ffd60a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:15px/1.35 -apple-system,system-ui,Segoe UI,Roboto,sans-serif;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+#head{flex:none}
+#strip{display:block;width:100%;height:58px}
+#bar{height:30px;background:var(--g);color:#000;display:flex;align-items:center;gap:8px;padding:0 10px;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden}
+#bar .sp{flex:1}
+#bar small{font-weight:600;font-size:12px}
+#calib{display:none;position:absolute;right:8px;top:36px;font-size:10px;font-weight:700;color:#ff9f0a}
+#stage{position:relative;flex:none;margin:0 auto;width:min(100vw,calc((100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 300px) * .75));aspect-ratio:3/4;background:#080808;overflow:hidden;touch-action:none}
+#vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform-origin:50% 50%}
+#ov{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#tagbtn{position:absolute;left:8px;top:8px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,.45);display:grid;place-items:center}
+#tagbtn svg{width:20px;height:20px;fill:#fff}
+#focus{position:absolute;width:70px;height:70px;border:1.5px solid var(--yel);border-radius:4px;display:none;pointer-events:none;transform:translate(-50%,-50%)}
+#toast{position:absolute;left:50%;top:10px;transform:translateX(-50%);background:rgba(0,0,0,.78);padding:8px 14px;border-radius:99px;font-size:13px;font-weight:700;display:none;max-width:92%;text-align:center;pointer-events:none}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .15s}
+#ctl{flex:1;display:flex;flex-direction:column;justify-content:space-evenly;align-items:center;min-height:0;padding:4px 0}
+#zoomrow{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.1);padding:4px 10px;border-radius:99px}
+#zoomrow button{width:38px;height:38px;border-radius:50%;background:rgba(0,0,0,.5);font-weight:700;font-size:13px}
+#zoomrow button.on{color:var(--yel)}
+#zoomrow button:disabled{opacity:.35}
+#modes{display:flex;gap:44px;font-size:19px;font-weight:700}
+#modes .on{color:var(--yel)}
+#modes .off{color:#777}
+#row{width:100%;display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+#galbtn,#setbtn{width:48px;height:48px;border-radius:9px;display:grid;place-items:center;background:rgba(255,255,255,.12);overflow:hidden}
+#setbtn{background:none}
+#galbtn img{width:100%;height:100%;object-fit:cover}
+#galbtn svg,#setbtn svg{width:26px;height:26px;fill:none;stroke:#fff;stroke-width:1.7}
+#shutter{width:74px;height:74px;border-radius:50%;border:4px solid #fff;display:grid;place-items:center}
+#shutter i{width:58px;height:58px;border-radius:50%;background:#fff;transition:transform .08s}
+#shutter:active i{transform:scale(.88)}
+
+/* Başlangıç ekranı */
+#start{position:fixed;inset:0;z-index:50;background:#0b0c0d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
+#start img{width:96px;height:96px;border-radius:22px}
+#start h1{margin:0;font-size:26px}
+#start p{margin:0;color:var(--mut);max-width:34ch}
+#start button.go{background:var(--g);color:#000;font-weight:800;font-size:18px;padding:14px 34px;border-radius:14px}
+#start .err{color:#ff9f0a;font-size:13px;min-height:1.3em}
+
+/* Paneller */
+.sheet{position:fixed;inset:0;z-index:30;background:var(--panel);display:none;flex-direction:column;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.sheet.open{display:flex}
+.sh-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:17px}
+.sh-head button{color:var(--blue);font-weight:600}
+.sh-body{flex:1;overflow:auto;padding:14px 16px 30px;-webkit-overflow-scrolling:touch}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tabs button{flex:none;padding:7px 13px;border-radius:99px;background:#2a2d30;font-weight:600;font-size:13px}
+.tabs button.on{background:var(--blue)}
+.f{display:flex;flex-direction:column;gap:6px;margin:0 0 16px}
+.f>label,.f>.lb{font-size:13px;color:var(--mut)}
+.f select,.f input[type=text]{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e0f10;color:var(--tx);font:inherit}
+.f input[type=range]{width:100%}
+.tg{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px}
+.tg input{width:46px;height:28px;accent-color:var(--g)}
+.note{font-size:12px;color:var(--mut);margin:-8px 0 16px}
+h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:99px;background:#2a2d30;font-weight:700;font-size:14px}
+.pill.on{background:var(--blue)}
+.pill b{opacity:.65;font-weight:700;padding-left:4px}
+.pill.add{background:none;border:1px dashed #666;color:var(--mut)}
+.sw{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px}
+.sw button{width:34px;height:34px;border-radius:50%;border:1px solid #666}
+.sw button.on{outline:3px solid var(--blue);outline-offset:2px}
+.btn{display:inline-block;background:var(--blue);padding:10px 16px;border-radius:10px;font-weight:700}
+.btn.red{background:#c62828}
+.btn.gray{background:#2a2d30}
+.logoprev{display:flex;align-items:center;gap:12px;margin-top:8px}
+.logoprev img{height:44px;max-width:50%;background:#fff;border-radius:4px}
+
+/* Galeri */
+.crumbs{padding:10px 16px;font-size:13px;color:var(--mut);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.crumbs a{color:var(--blue);cursor:pointer}
+.item{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.item .ic{width:56px;height:56px;border-radius:8px;background:#2a2d30;display:grid;place-items:center;overflow:hidden;flex:none;font-size:26px}
+.item img{width:100%;height:100%;object-fit:cover}
+.item .nm{flex:1;min-width:0;word-break:break-all;font-size:13px}
+.item .nm small{display:block;color:var(--mut)}
+.item .x{color:#ff6b6b;padding:8px}
+.acts{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+#viewer{position:fixed;inset:0;z-index:60;background:#000;display:none;flex-direction:column}
+#viewer.open{display:flex}
+#viewer img{flex:1;min-height:0;object-fit:contain;width:100%}
+#viewer .vb{display:flex;gap:10px;justify-content:center;padding:12px 12px calc(12px + env(safe-area-inset-bottom))}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="head">
+    <canvas id="strip"></canvas>
+    <div id="bar">
+      <span id="hdg">0° N</span>
+      <span class="sp"></span>
+      <span id="barsec"></span>
+      <span class="sp"></span>
+      <small id="acc">± –</small>
+      <span id="alt">▲ – m</span>
+    </div>
+    <div id="calib">Pusula kalibrasyonu: telefonu 8 şeklinde çevirin</div>
+  </div>
+
+  <div id="stage">
+    <video id="vid" playsinline muted autoplay></video>
+    <canvas id="ov"></canvas>
+    <button id="tagbtn" aria-label="Etiketler"><svg viewBox="0 0 24 24"><path d="M21.4 11.6l-9-9A2 2 0 0 0 11 2H4a2 2 0 0 0-2 2v7c0 .5.2 1 .6 1.4l9 9a2 2 0 0 0 2.8 0l7-7a2 2 0 0 0 0-2.8zM6.5 8A1.5 1.5 0 1 1 8 6.5 1.5 1.5 0 0 1 6.5 8z"/></svg></button>
+    <div id="focus"></div>
+    <div id="toast"></div>
+    <div id="flash"></div>
+  </div>
+
+  <div id="ctl">
+    <div id="zoomrow"></div>
+    <div id="modes"><span class="off" title="Bu web sürümünde video yok">Video</span><span class="on">Photo</span></div>
+    <div id="row">
+      <button id="galbtn" aria-label="Galeri"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+      <button id="shutter" aria-label="Çek"><i></i></button>
+      <button id="setbtn" aria-label="Ayarlar"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<div id="start">
+  <img src="icon.png" alt="">
+  <h1>Saha Kamera</h1>
+  <p>Başlamak için kamera, konum ve pusula izinlerini vermen gerekiyor.</p>
+  <button class="go" id="go">Başlat</button>
+  <div class="err" id="starterr"></div>
+</div>
+
+<div class="sheet" id="tagsheet">
+  <div class="sh-head"><span>Etiketler</span><button data-close>Bitti</button></div>
+  <div class="sh-body" id="tagbody"></div>
+</div>
+
+<div class="sheet" id="setsheet">
+  <div class="sh-head"><span>Ayarlar</span><button data-close>Bitti</button></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="sh-body" id="setbody"></div>
+</div>
+
+<div class="sheet" id="galsheet">
+  <div class="sh-head"><span>Kayıtlar</span><button data-close>Kapat</button></div>
+  <div class="crumbs" id="crumbs"></div>
+  <div class="sh-body" id="galbody"></div>
+</div>
+
+<div id="viewer"><img id="vimg" alt=""><div class="vb"><button class="btn" id="vshare">Paylaş</button><button class="btn gray" id="vclose">Kapat</button></div></div>
+
+<script>
+// Sıkıştırmasız (store) zip yazıcı. Ek kütüphane gerekmez. Türkçe dosya adları için UTF-8 bayrağı açık.
+(function (root) {
+  const crcT = (() => {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(u8) {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < u8.length; i++) c = crcT[(c ^ u8[i]) & 255] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // entries: [{name: "klasor/dosya.jpg", blob: Blob}]
+  async function makeZip(entries) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let off = 0;
+    const d = new Date();
+    const dt = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+    const dd = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+
+    for (const e of entries) {
+      const data = new Uint8Array(await e.blob.arrayBuffer());
+      const nm = enc.encode(e.name);
+      const crc = crc32(data);
+
+      const lh = new DataView(new ArrayBuffer(30));
+      lh.setUint32(0, 0x04034b50, true);
+      lh.setUint16(4, 20, true);
+      lh.setUint16(6, 0x0800, true);
+      lh.setUint16(8, 0, true);
+      lh.setUint16(10, dt, true);
+      lh.setUint16(12, dd, true);
+      lh.setUint32(14, crc, true);
+      lh.setUint32(18, data.length, true);
+      lh.setUint32(22, data.length, true);
+      lh.setUint16(26, nm.length, true);
+      lh.setUint16(28, 0, true);
+      parts.push(lh.buffer, nm, data);
+
+      const ch = new DataView(new ArrayBuffer(46));
+      ch.setUint32(0, 0x02014b50, true);
+      ch.setUint16(4, 20, true);
+      ch.setUint16(6, 20, true);
+      ch.setUint16(8, 0x0800, true);
+      ch.setUint16(10, 0, true);
+      ch.setUint16(12, dt, true);
+      ch.setUint16(14, dd, true);
+      ch.setUint32(16, crc, true);
+      ch.setUint32(20, data.length, true);
+      ch.setUint32(24, data.length, true);
+      ch.setUint16(28, nm.length, true);
+      ch.setUint32(42, off, true);
+      central.push(ch.buffer, nm);
+
+      off += 30 + nm.length + data.length;
+    }
+
+    const csize = central.reduce((a, b) => a + b.byteLength, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, entries.length, true);
+    end.setUint16(10, entries.length, true);
+    end.setUint32(12, csize, true);
+    end.setUint32(16, off, true);
+    return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+  }
+
+  root.makeZip = makeZip;
+  if (typeof module !== 'undefined') module.exports = { makeZip, crc32 };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+'use strict';
+/* ============ Yardımcılar ============ */
+const $ = s => document.querySelector(s);
+const el = (t, p = {}, kids = []) => { const e = document.createElement(t); Object.assign(e, p); kids.forEach(k => e.append(k)); return e; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pad2 = n => String(n).padStart(2, '0');
+const sanitize = s => String(s).replace(/[\/\\:]/g, '-').trim();
+
+/* ============ Ayarlar ============ */
+const DEF = {
+  siteID: 'KBGTI', sectors: ['SEKTÖR-1', 'SEKTÖR-2'], sector: 'SEKTÖR-1', showSector: true,
+  tags: ['Montaj Seri No', 'Söküm Seri No', 'Vinç'], activeTags: ['Montaj Seri No'],
+  pos: 'br', margin: 0, bar: false,
+  logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9,
+  font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
+  color: '#00FF1A', bg: '#000000', bgOp: 0.87, txOp: 0.70,
+  time: true, coords: true, coordFmt: 'dms', addr: true, street: true, district: true, city: false, country: true,
+  sid: true, heading: false, compassPhoto: true, dual: true, quality: 0.95, sectorInName: true
+};
+let S = (() => {
+  try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('saha.settings.v1') || '{}')); }
+  catch (e) { return Object.assign({}, DEF); }
+})();
+function save() { try { localStorage.setItem('saha.settings.v1', JSON.stringify(S)); } catch (e) {} drawOverlay(); updateBar(); }
+
+const POS = { tl: 'Sol üst', tc: 'Üst orta', tr: 'Sağ üst', bl: 'Sol alt', bc: 'Alt orta', br: 'Sağ alt' };
+const FONTS = [['Arial', 'Arial, Helvetica, sans-serif'], ['Helvetica Neue', '"Helvetica Neue", Helvetica, sans-serif'], ['Verdana', 'Verdana, sans-serif'],
+  ['Georgia', 'Georgia, serif'], ['Courier New', '"Courier New", monospace'], ['Menlo', 'Menlo, monospace'], ['Sistem', 'system-ui, sans-serif']];
+const SIZES = { tiny: ['Çok küçük', 0.014], small: ['Küçük', 0.018], middle: ['Orta', 0.024], large: ['Büyük', 0.032] };
+const PALETTE = ['#00FF1A', '#FFFFFF', '#FFD60A', '#FF9F0A', '#1E88E5', '#2F4BFF', '#4DA3C7', '#FF453A', '#1C1C1E', '#000000'];
+
+/* ============ Konum / adres ============ */
+const G = { lat: null, lon: null, acc: null, alt: null, addr: { street: '', district: '', city: '', country: '' }, lastGeo: null, lastGeoT: 0, busy: false };
+
+function startGeo() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(p => {
+    G.lat = p.coords.latitude; G.lon = p.coords.longitude; G.acc = p.coords.accuracy; G.alt = p.coords.altitude;
+    updateBar(); drawOverlay(); geocode();
+  }, () => {}, { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 });
+}
+function dist(a, b, c, d) {
+  const R = 6371000, r = Math.PI / 180, dLa = (c - a) * r, dLo = (d - b) * r;
+  const x = Math.sin(dLa / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin(dLo / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+async function geocode() {
+  if (G.busy || G.lat == null) return;
+  const now = Date.now();
+  if (now - G.lastGeoT < 10000) return;
+  const moved = G.lastGeo ? dist(G.lastGeo[0], G.lastGeo[1], G.lat, G.lon) : Infinity;
+  const empty = !G.addr.street && !G.addr.city;
+  if (!(moved > 25 || now - G.lastGeoT > 120000 || empty)) return;
+  G.busy = true; G.lastGeoT = now; G.lastGeo = [G.lat, G.lon];
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=tr&lat=${G.lat}&lon=${G.lon}`);
+    const j = await r.json(), a = j.address || {};
+    let street = a.road || a.pedestrian || a.footway || a.neighbourhood || '';
+    if (street && a.house_number) street += ' No:' + a.house_number;
+    G.addr = {
+      street,
+      district: a.suburb || a.neighbourhood || a.quarter || a.village || a.town || '',
+      city: a.city || a.town || a.county || a.state || '',
+      country: a.country || ''
+    };
+    drawOverlay();
+  } catch (e) { /* internet yoksa son adres kalır */ }
+  G.busy = false;
+}
+
+/* ============ Pusula ============ */
+let heading = 0, hdgSmooth = null, hdgAcc = -1, gotOrientation = false;
+function cardinal(d) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.floor(((d + 22.5) % 360) / 45)]; }
+function onOrient(e) {
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) {
+    h = e.webkitCompassHeading;                 // iOS: manyetik pusula
+    hdgAcc = e.webkitCompassAccuracy != null ? e.webkitCompassAccuracy : -1;
+  } else if (e.alpha != null && (e.absolute || e.type === 'deviceorientationabsolute')) {
+    const r = Math.PI / 180, a = e.alpha * r, b = (e.beta || 0) * r, g = (e.gamma || 0) * r;
+    const rA = -Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g);
+    const rB = -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g);
+    h = Math.atan2(rA, rB) / r; if (h < 0) h += 360;
+    hdgAcc = 10;
+  }
+  if (h == null) return;
+  gotOrientation = true;
+  if (hdgSmooth == null) hdgSmooth = h;
+  let d = h - hdgSmooth; if (d > 180) d -= 360; else if (d < -180) d += 360;
+  hdgSmooth = (hdgSmooth + d * 0.25 + 360) % 360;
+  heading = hdgSmooth;
+}
+async function startCompass() {
+  try {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') return false;
+    }
+  } catch (e) { return false; }
+  window.addEventListener('deviceorientationabsolute', onOrient, true);
+  window.addEventListener('deviceorientation', onOrient, true);
+  return true;
+}
+
+const strip = $('#strip'), sctx = strip.getContext('2d');
+function stripPaint(c, w, h, hd) {
+  const span = 120, ppd = w / span, base = h - 4;
+  const lo = Math.floor((hd - span / 2) / 5) * 5, hi = Math.ceil((hd + span / 2) / 5) * 5;
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (let d = lo; d <= hi; d += 5) {
+    const x = w / 2 + (d - hd) * ppd, n = ((d % 360) + 360) % 360;
+    if (n % 10 === 0) {
+      c.strokeStyle = '#fff'; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(x, base); c.lineTo(x, base - 12); c.stroke();
+    } else {
+      c.fillStyle = '#00f51a'; c.beginPath(); c.arc(x, base - 6, 1.6, 0, 7); c.fill();
+    }
+    c.fillStyle = '#fff';
+    if (n % 30 === 0) { c.font = '600 11px -apple-system,Arial,sans-serif'; c.fillText(String(n), x, base - 24); }
+    if (n % 45 === 0) { c.font = '700 13px -apple-system,Arial,sans-serif'; c.fillText(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][n / 45], x, base - 42); }
+  }
+  c.strokeStyle = '#ff2d20'; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(w / 2, 0); c.lineTo(w / 2, base - 52); c.stroke();
+}
+function drawStrip() {
+  const dpr = devicePixelRatio || 1, w = strip.clientWidth, h = strip.clientHeight;
+  if (strip.width !== w * dpr) { strip.width = w * dpr; strip.height = h * dpr; }
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.clearRect(0, 0, w, h);
+  stripPaint(sctx, w, h, heading);
+}
+// Fotoğrafın üstüne pusula şeridi + yeşil bilgi çubuğu basar (ekrandakinin aynısı)
+function paintCompass(c, W, hd, acc, alt) {
+  const k = W / 430;
+  c.save(); c.scale(k, k);
+  c.fillStyle = 'rgba(0,0,0,.55)'; c.fillRect(0, 0, 430, 58);
+  stripPaint(c, 430, 58, hd);
+  c.fillStyle = '#00f51a'; c.fillRect(0, 58, 430, 30);
+  c.fillStyle = '#000'; c.textBaseline = 'middle'; c.font = '700 14px -apple-system,Arial,sans-serif';
+  c.textAlign = 'left'; c.fillText(`${Math.round(hd) % 360}° ${cardinal(hd)}`, 10, 73);
+  c.textAlign = 'center'; if (S.showSector && S.sector) c.fillText('● ' + S.sector, 215, 73);
+  c.textAlign = 'right';
+  c.fillText((acc != null ? `± ${Math.round(acc)}m   ` : '') + (alt != null ? `▲ ${Math.round(alt)} m` : ''), 420, 73);
+  c.restore();
+}
+function updateBar() {
+  $('#hdg').textContent = `🧭 ${Math.round(heading) % 360}° ${cardinal(heading)}`;
+  $('#barsec').textContent = (S.showSector && S.sector) ? '● ' + S.sector : '';
+  $('#acc').textContent = G.acc != null ? `± ${Math.round(G.acc)}m` : 'Konum aranıyor…';
+  $('#alt').textContent = G.alt != null ? `▲ ${Math.round(G.alt)} m` : '▲ – m';
+  $('#calib').style.display = (gotOrientation && (hdgAcc < 0 || hdgAcc > 30)) ? 'block' : 'none';
+}
+
+/* ============ Filigran ============ */
+function dateStr(d) {
+  const ay = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+  const off = -d.getTimezoneOffset(), s = off >= 0 ? '+' : '-', h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60;
+  return `${d.getDate()} ${ay[d.getMonth()]} ${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())} GMT${s}${h}${m ? ':' + pad2(m) : ''}`;
+}
+function dms(v, p, n) {
+  const hemi = v >= 0 ? p : n, t = Math.round(Math.abs(v) * 3600);
+  return `${hemi} ${Math.floor(t / 3600)}° ${Math.floor((t % 3600) / 60)}' ${t % 60}"`;
+}
+function buildLines(d, hdg, snap) {
+  const s = snap || G, out = [];
+  if (S.time) out.push(dateStr(d));
+  if (S.coords && s.lat != null) out.push(S.coordFmt === 'dms' ? `${dms(s.lat, 'N', 'S')}, ${dms(s.lon, 'E', 'W')}` : `${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`);
+  if (S.addr) {
+    if (S.street && s.addr.street) out.push(s.addr.street);
+    const p = [];
+    if (S.district && s.addr.district) p.push(s.addr.district);
+    if (S.city && s.addr.city) p.push(s.addr.city);
+    if (S.country && s.addr.country) p.push(s.addr.country);
+    if (p.length) out.push(p.join(' '));
+  }
+  if (S.sid && S.siteID) out.push('SİTE ID: ' + S.siteID);
+  if (S.showSector && S.sector) out.push(S.sector);
+  S.activeTags.forEach(t => out.push('#' + t));
+  if (S.heading) out.push(`Yön: ${Math.round(hdg) % 360}° ${cardinal(hdg)}`);
+  return out;
+}
+const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return `rgba(${v >> 16 & 255},${v >> 8 & 255},${v & 255},${a})`; };
+let logoImg = null;
+function loadLogo() {
+  logoImg = null;
+  if (!S.logo) return;
+  const i = new Image(); i.onload = () => { logoImg = i; drawOverlay(); }; i.src = S.logo;
+}
+function wrap(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return [text];
+  const words = text.split(' '), rows = []; let cur = '';
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(t).width > maxW && cur) { rows.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) rows.push(cur);
+  return rows;
+}
+// Önizleme ve fotoğraf aynı kodu kullanır
+function paint(ctx, W, H, lines) {
+  const m = S.margin * W, left = S.pos.endsWith('l'), right = S.pos.endsWith('r'), top = S.pos.startsWith('t');
+  if (logoImg && S.logo) {
+    const lw = W * S.logoScale, lh = lw * logoImg.height / logoImg.width, lm = W * 0.02, lp = S.logoPos;
+    const lx = lp.endsWith('l') ? lm : lp.endsWith('r') ? W - lm - lw : (W - lw) / 2;
+    const ly = lp.startsWith('t') ? lm : H - lm - lh;
+    ctx.globalAlpha = S.logoOp; ctx.drawImage(logoImg, lx, ly, lw, lh); ctx.globalAlpha = 1;
+  }
+  if (!lines.length) return;
+  const fpx = Math.max(6, W * SIZES[S.size][1]), padd = fpx * 0.6, gap = fpx * 0.12;
+  ctx.font = `${S.bold ? 'bold ' : ''}${fpx}px ${S.font}`;
+  ctx.textBaseline = 'top';
+  const maxTextW = W - 2 * m - 2 * padd;
+  const rows = []; lines.forEach(l => wrap(ctx, l, maxTextW).forEach(r => rows.push(r)));
+  const widest = Math.max(...rows.map(r => ctx.measureText(r).width));
+  const tw = S.bar ? maxTextW : widest, bw = tw + 2 * padd;
+  const lineH = fpx * 1.18, bh = rows.length * lineH + (rows.length - 1) * gap + 2 * padd;
+  const x = left ? m : right ? W - m - bw : (W - bw) / 2, y = top ? m : H - m - bh;
+  ctx.fillStyle = rgba(S.bg, S.bgOp); ctx.fillRect(x, y, bw, bh);
+  ctx.fillStyle = rgba(S.color, S.txOp);
+  ctx.textAlign = left ? 'left' : right ? 'right' : 'center';
+  const tx = left ? x + padd : right ? x + bw - padd : x + bw / 2;
+  rows.forEach((r, i) => ctx.fillText(r, tx, y + padd + i * (lineH + gap)));
+}
+const ov = $('#ov'), octx = ov.getContext('2d');
+function drawOverlay() {
+  const r = ov.getBoundingClientRect(), dpr = Math.min(devicePixelRatio || 1, 3);
+  const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+  if (!W) return;
+  if (ov.width !== W || ov.height !== H) { ov.width = W; ov.height = H; }
+  octx.clearRect(0, 0, W, H);
+  paint(octx, W, H, buildLines(new Date(), heading));
+}
+
+/* ============ Kamera ============ */
+const vid = $('#vid');
+let stream = null, track = null, lens = 'main', zoomVal = 1, digital = 1, lenses = {}, torchOK = false, torchOn = false;
+
+async function openCamera(deviceId) {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const video = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 4032 }, height: { ideal: 3024 } }
+    : { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } };
+  stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  track = stream.getVideoTracks()[0];
+  vid.srcObject = stream;
+  await vid.play().catch(() => {});
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  torchOK = !!caps.torch; torchOn = false;
+  digital = 1; vid.style.transform = '';
+}
+async function findLenses() {
+  lenses = {};
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    devs.forEach(d => {
+      const l = (d.label || '').toLowerCase();
+      if (/ultra|geniş açı/.test(l)) lenses.ultra = d.deviceId;
+      else if (/tele/.test(l)) lenses.tele = d.deviceId;
+      else if (/back|rear|arka|environment/.test(l) && !lenses.main) lenses.main = d.deviceId;
+    });
+  } catch (e) {}
+}
+function applyZoom(z) {
+  zoomVal = z;
+  const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+  if (caps.zoom) {
+    const v = clamp(z, caps.zoom.min, caps.zoom.max);
+    track.applyConstraints({ advanced: [{ zoom: v }] }).catch(() => {});
+    digital = 1; vid.style.transform = '';
+  } else {
+    digital = clamp(z, 1, 8); vid.style.transform = `scale(${digital})`;
+  }
+  renderZoom();
+}
+async function setLens(name, z) {
+  if (name !== lens) {
+    const id = lenses[name];
+    if (!id) return applyZoom(z);
+    try { await openCamera(id); lens = name; } catch (e) { toast('Bu lens açılamadı'); return; }
+  }
+  applyZoom(z);
+}
+function renderZoom() {
+  const box = $('#zoomrow'); box.innerHTML = '';
+  const btn = (txt, on, fn, dis) => { const b = el('button', { textContent: txt, disabled: !!dis }); if (on) b.classList.add('on'); b.onclick = fn; box.append(b); };
+  btn(torchOn ? '⚡' : '🔦', torchOn, toggleTorch, !torchOK);
+  if (lenses.ultra) btn(lens === 'ultra' ? '0.5×' : '0.5', lens === 'ultra', () => setLens('ultra', 1));
+  const mainOn = lens === 'main' && zoomVal < 1.5;
+  btn(mainOn ? '1×' : '1', mainOn, () => setLens('main', 1));
+  const twoOn = lens === 'main' && zoomVal >= 1.5 && zoomVal < 3.5;
+  btn(twoOn ? zoomVal.toFixed(1) + '×' : '2', twoOn, () => setLens('main', 2));
+  const fiveOn = lens === 'tele' || (lens === 'main' && zoomVal >= 3.5);
+  btn(fiveOn ? (lens === 'tele' ? '5×' : zoomVal.toFixed(1) + '×') : '5', fiveOn, () => lenses.tele ? setLens('tele', 1) : setLens('main', 5));
+}
+async function toggleTorch() {
+  if (!torchOK) return;
+  try { await track.applyConstraints({ advanced: [{ torch: !torchOn }] }); torchOn = !torchOn; renderZoom(); } catch (e) { toast('Fener açılamadı'); }
+}
+// Dokunarak odak (destekleniyorsa) ve iki parmak zoom
+let pinch = null;
+$('#stage').addEventListener('touchstart', e => {
+  if (e.touches.length === 2) pinch = { d: Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY), z: zoomVal };
+}, { passive: true });
+$('#stage').addEventListener('touchmove', e => {
+  if (pinch && e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    applyZoom(clamp(pinch.z * d / pinch.d, 1, 10));
+  }
+}, { passive: true });
+$('#stage').addEventListener('touchend', e => { if (e.touches.length < 2) pinch = null; }, { passive: true });
+$('#stage').addEventListener('click', e => {
+  if (e.target.closest('#tagbtn')) return;
+  const r = $('#stage').getBoundingClientRect(), f = $('#focus');
+  f.style.left = (e.clientX - r.left) + 'px'; f.style.top = (e.clientY - r.top) + 'px'; f.style.display = 'block';
+  setTimeout(() => f.style.display = 'none', 900);
+  if (track && track.getCapabilities) {
+    const c = track.getCapabilities();
+    if (c.focusMode && c.focusMode.includes('single-shot')) {
+      track.applyConstraints({ advanced: [{ focusMode: 'single-shot', pointsOfInterest: [{ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height }] }] }).catch(() => {});
+    }
+  }
+});
+
+/* ============ Depolama (IndexedDB) ============ */
+let db = null;
+function openDB() {
+  return new Promise((res, rej) => {
+    const q = indexedDB.open('saha-kamera', 1);
+    q.onupgradeneeded = () => { q.result.createObjectStore('files', { keyPath: 'id', autoIncrement: true }).createIndex('dir', 'dir'); };
+    q.onsuccess = () => { db = q.result; res(); };
+    q.onerror = () => rej(q.error);
+  });
+}
+const tx = (mode) => db.transaction('files', mode).objectStore('files');
+const dbAll = () => new Promise((res, rej) => { const q = tx('readonly').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+const dbPut = rec => new Promise((res, rej) => { const q = tx('readwrite').add(rec); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+const dbDel = id => new Promise((res, rej) => { const q = tx('readwrite').delete(id); q.onsuccess = () => res(); q.onerror = () => rej(q.error); });
+
+function dayFolder(d) { return `${sanitize(S.siteID || 'SAHA')}_${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function baseName() {
+  const p = [sanitize(S.siteID || 'SAHA')];
+  if (S.sectorInName && S.sector) p.push(sanitize(S.sector));
+  S.activeTags.forEach(t => p.push(sanitize(t)));
+  return p.join('-');
+}
+
+/* ============ Çekim ============ */
+let shooting = false;
+function toBlob(c, q) { return new Promise(r => c.toBlob(r, 'image/jpeg', q)); }
+async function shoot() {
+  if (shooting || !vid.videoWidth) return;
+  shooting = true;
+  const fl = $('#flash'); fl.style.opacity = .8; setTimeout(() => fl.style.opacity = 0, 100);
+  try {
+    const now = new Date(), snap = { lat: G.lat, lon: G.lon, addr: { ...G.addr } }, hdg = heading, accS = G.acc, altS = G.alt;
+    const vw = vid.videoWidth, vh = vid.videoHeight;
+    let sw, sh;
+    if (vw / vh > 3 / 4) { sh = vh; sw = vh * 3 / 4; } else { sw = vw; sh = vw * 4 / 3; }
+    sw /= digital; sh /= digital;
+    const sx = (vw - sw) / 2, sy = (vh - sh) / 2, ow = Math.round(Math.min(sw, 2160)), oh = Math.round(ow * 4 / 3);
+    const c = el('canvas'); c.width = ow; c.height = oh;
+    const x = c.getContext('2d');
+    x.drawImage(vid, sx, sy, sw, sh, 0, 0, ow, oh);
+    const clean = S.dual ? await toBlob(c, S.quality) : null;
+    paint(x, ow, oh, buildLines(now, hdg, snap));
+    if (S.compassPhoto && gotOrientation) paintCompass(x, ow, hdg, accS, altS);
+    const stamped = await toBlob(c, S.quality);
+
+    const dir = dayFolder(now) + (S.sector ? '/' + sanitize(S.sector) : '');
+    const base = baseName(), all = await dbAll();
+    let n = 0;
+    all.forEach(r => { if (r.dir === dir && r.name.startsWith(base + '_')) { const m = parseInt(r.name.slice(base.length + 1), 10); if (m > n) n = m; } });
+    n++;
+    const name = `${base}_${n}`;
+    await dbPut({ dir, name: name + '.jpg', blob: stamped, ts: now.getTime() });
+    if (clean) await dbPut({ dir, name: name + '_temiz.jpg', blob: clean, ts: now.getTime() });
+    setThumb(stamped);
+    toast('Kaydedildi: ' + name + (clean ? ' (+ temiz)' : ''));
+  } catch (e) {
+    toast('Kaydedilemedi: ' + (e && e.message || e));
+  }
+  shooting = false;
+}
+function setThumb(blob) {
+  const u = URL.createObjectURL(blob), b = $('#galbtn');
+  b.innerHTML = ''; b.append(el('img', { src: u }));
+}
+let toastT;
+function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 2600); }
+
+/* ============ Paneller ============ */
+function openSheet(id) { $(id).classList.add('open'); }
+document.querySelectorAll('.sheet [data-close]').forEach(b => b.onclick = () => { b.closest('.sheet').classList.remove('open'); drawOverlay(); updateBar(); });
+
+function pills(box, list, isOn, onTap, onAdd, onDel) {
+  const wrapEl = el('div', { className: 'pills' });
+  list.forEach(t => {
+    const p = el('span', { className: 'pill' + (isOn(t) ? ' on' : '') });
+    p.append(el('span', { textContent: t, onclick: () => { onTap(t); } }));
+    p.append(el('b', { textContent: '×', onclick: ev => { ev.stopPropagation(); if (confirm(`"${t}" silinsin mi?`)) onDel(t); } }));
+    wrapEl.append(p);
+  });
+  wrapEl.append(el('button', { className: 'pill add', textContent: '+ Etiket ekle', onclick: () => {
+    const v = sanitize(prompt('Yeni etiket adı') || ''); if (v && !list.includes(v)) onAdd(v);
+  } }));
+  box.append(wrapEl);
+}
+function tog(box, label, key, after) {
+  const i = el('input', { type: 'checkbox', checked: !!S[key], onchange: () => { S[key] = i.checked; save(); if (after) after(); } });
+  box.append(el('div', { className: 'tg' }, [el('span', { textContent: label }), i]));
+}
+function rng(box, label, key, min, max, step, fmt) {
+  const lb = el('label', { textContent: label + ': ' + fmt(S[key]) });
+  const i = el('input', { type: 'range', min, max, step, value: S[key], oninput: () => { S[key] = parseFloat(i.value); lb.textContent = label + ': ' + fmt(S[key]); save(); } });
+  box.append(el('div', { className: 'f' }, [lb, i]));
+}
+function sel(box, label, key, opts, after) {
+  const s = el('select', { onchange: () => { S[key] = s.value; save(); if (after) after(); } });
+  opts.forEach(([v, t]) => { const o = el('option', { value: v, textContent: t }); if (S[key] === v) o.selected = true; s.append(o); });
+  box.append(el('div', { className: 'f' }, [el('label', { textContent: label }), s]));
+}
+function colors(box, label, key) {
+  const sw = el('div', { className: 'sw' });
+  PALETTE.forEach(c => { const b = el('button', { onclick: () => { S[key] = c; save(); render(); } }); b.style.background = c; if (S[key].toUpperCase() === c) b.className = 'on'; sw.append(b); });
+  const custom = el('input', { type: 'color', value: S[key], oninput: () => { S[key] = custom.value.toUpperCase(); save(); } });
+  box.append(el('div', { className: 'f' }, [el('div', { className: 'lb', textContent: label }), sw, custom]));
+}
+
+function renderTags() {
+  const b = $('#tagbody'); b.innerHTML = '';
+  b.append(el('h3', { textContent: 'Sektör (klasör)' }));
+  pills(b, S.sectors, t => t === S.sector,
+    t => { S.sector = S.sector === t ? '' : t; save(); renderTags(); },
+    t => { S.sectors.push(t); S.sector = t; save(); renderTags(); },
+    t => { S.sectors = S.sectors.filter(x => x !== t); if (S.sector === t) S.sector = ''; save(); renderTags(); });
+  tog(b, 'Kamerada göster', 'showSector', renderTags);
+  b.append(el('p', { className: 'note', textContent: `Seçtiğin sektör, gün klasörünün içinde ayrı klasör olur: ${dayFolder(new Date())} / ${S.sector || '(sektör yok)'}` }));
+  b.append(el('h3', { textContent: 'Etiketler (#)' }));
+  pills(b, S.tags, t => S.activeTags.includes(t),
+    t => { S.activeTags = S.activeTags.includes(t) ? S.activeTags.filter(x => x !== t) : [...S.activeTags, t]; save(); renderTags(); },
+    t => { S.tags.push(t); S.activeTags.push(t); save(); renderTags(); },
+    t => { S.tags = S.tags.filter(x => x !== t); S.activeTags = S.activeTags.filter(x => x !== t); save(); renderTags(); });
+  b.append(el('p', { className: 'note', textContent: 'Seçili etiketler fotoğrafa #etiket olarak yazılır ve dosya adına eklenir.' }));
+}
+
+const TABS = ['Konum', 'Yazı', 'Giriş', 'Opaklık', 'Format', 'Kayıt'];
+let tab = 'Konum';
+function render() {
+  const tb = $('#tabs'); tb.innerHTML = '';
+  TABS.forEach(t => tb.append(el('button', { textContent: t, className: t === tab ? 'on' : '', onclick: () => { tab = t; render(); } })));
+  const b = $('#setbody'); b.innerHTML = '';
+  const pct = v => '%' + Math.round(v * 100);
+  if (tab === 'Konum') {
+    sel(b, 'Yazı bloğu konumu', 'pos', Object.entries(POS));
+    rng(b, 'Kenar boşluğu', 'margin', 0, 0.08, 0.005, v => v === 0 ? '0 (Margins)' : pct(v));
+    tog(b, 'Tam genişlik şerit', 'bar');
+    b.append(el('p', { className: 'note', textContent: 'Kapalıyken yazı bloğu sadece yazı kadar yer kaplar (half line).' }));
+    b.append(el('h3', { textContent: 'Logo' }));
+    sel(b, 'Logo konumu', 'logoPos', Object.entries(POS));
+    rng(b, 'Logo boyutu', 'logoScale', 0.05, 0.5, 0.01, pct);
+  } else if (tab === 'Yazı') {
+    sel(b, 'Yazı tipi', 'font', FONTS.map(f => [f[1], f[0]]));
+    sel(b, 'Boyut', 'size', Object.entries(SIZES).map(([k, v]) => [k, v[0]]));
+    tog(b, 'Kalın', 'bold');
+    colors(b, 'Yazı rengi', 'color');
+    colors(b, 'Arka plan rengi', 'bg');
+  } else if (tab === 'Giriş') {
+    const f = el('div', { className: 'f' }), i = el('input', { type: 'text', value: S.siteID, autocapitalize: 'characters', autocomplete: 'off', oninput: () => { S.siteID = i.value.toUpperCase().trim(); save(); } });
+    f.append(el('label', { textContent: 'SİTE ID' }), i);
+    b.append(f, el('p', { className: 'note', textContent: 'Klasör adı: SİTE ID_tarih. Aynı sahaya başka günde gidince karışmaz.' }));
+    b.append(el('h3', { textContent: 'Logo (filigran)' }));
+    const file = el('input', { type: 'file', accept: 'image/*', hidden: true, onchange: () => importLogo(file.files[0]) });
+    b.append(file, el('button', { className: 'btn', textContent: 'Logo içe aktar', onclick: () => file.click() }));
+    if (S.logo) b.append(el('div', { className: 'logoprev' }, [el('img', { src: S.logo }), el('button', { className: 'btn red', textContent: 'Kaldır', onclick: () => { S.logo = null; logoImg = null; save(); render(); } })]));
+    b.append(el('h3', { textContent: 'Etiketler (#)' }));
+    pills(b, S.tags, t => S.activeTags.includes(t),
+      t => { S.activeTags = S.activeTags.includes(t) ? S.activeTags.filter(x => x !== t) : [...S.activeTags, t]; save(); render(); },
+      t => { S.tags.push(t); S.activeTags.push(t); save(); render(); },
+      t => { S.tags = S.tags.filter(x => x !== t); S.activeTags = S.activeTags.filter(x => x !== t); save(); render(); });
+  } else if (tab === 'Opaklık') {
+    rng(b, 'Arka plan opaklığı', 'bgOp', 0, 1, 0.01, v => Math.round(v * 100));
+    rng(b, 'Yazı opaklığı', 'txOp', 0.1, 1, 0.01, v => Math.round(v * 100));
+    rng(b, 'Logo opaklığı', 'logoOp', 0.1, 1, 0.01, v => Math.round(v * 100));
+  } else if (tab === 'Format') {
+    tog(b, 'Tarih / saat', 'time'); tog(b, 'Koordinat', 'coords');
+    sel(b, 'Koordinat biçimi', 'coordFmt', [['dms', "Derece  N 35° 11' 36\""], ['dec', 'Ondalık  35.193333']]);
+    tog(b, 'Pusula şeridini fotoğrafa bas (derece)', 'compassPhoto');
+    tog(b, 'Yön satırı (yazı bloğunda)', 'heading');
+    b.append(el('h3', { textContent: 'Adres' }));
+    tog(b, 'Adres göster', 'addr'); tog(b, 'Sokak / cadde', 'street'); tog(b, 'İlçe / semt', 'district'); tog(b, 'Şehir', 'city'); tog(b, 'Ülke', 'country');
+    b.append(el('h3', { textContent: 'Saha bilgisi' }));
+    tog(b, 'SİTE ID satırı', 'sid'); tog(b, 'Sektör satırı', 'showSector');
+  } else {
+    tog(b, 'Her çekimde 2 foto (yazılı + temiz)', 'dual');
+    b.append(el('p', { className: 'note', textContent: 'Temiz foto aynı klasöre "_temiz" son ekiyle kaydedilir.' }));
+    rng(b, 'JPEG kalitesi', 'quality', 0.7, 1, 0.01, pct);
+    tog(b, 'Sektörü dosya adına ekle', 'sectorInName');
+    b.append(el('p', { className: 'note', textContent: 'Örnek: ' + baseName() + '_1.jpg' }));
+  }
+}
+function importLogo(f) {
+  if (!f) return;
+  const i = new Image(), u = URL.createObjectURL(f);
+  i.onload = () => {
+    const sc = Math.min(1, 600 / Math.max(i.width, i.height)), c = el('canvas');
+    c.width = Math.round(i.width * sc); c.height = Math.round(i.height * sc);
+    c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
+    S.logo = c.toDataURL('image/png'); URL.revokeObjectURL(u);
+    loadLogo(); save(); render();
+  };
+  i.src = u;
+}
+
+/* ============ Galeri ============ */
+let path = [];
+async function renderGallery() {
+  const all = await dbAll(), cr = $('#crumbs'), body = $('#galbody');
+  cr.innerHTML = ''; body.innerHTML = '';
+  const go = n => { path = path.slice(0, n); renderGallery(); };
+  cr.append(el('a', { textContent: 'Kayıtlar', onclick: () => go(0) }));
+  path.forEach((p, i) => { cr.append(' / '); cr.append(el('a', { textContent: p, onclick: () => go(i + 1) })); });
+
+  const here = path.join('/');
+  const inside = all.filter(r => here === '' || r.dir === here || r.dir.startsWith(here + '/'));
+  const folders = new Map(), files = [];
+  inside.forEach(r => {
+    const rest = here === '' ? r.dir : r.dir === here ? '' : r.dir.slice(here.length + 1);
+    if (rest === '') files.push(r); else { const f = rest.split('/')[0]; folders.set(f, Math.max(folders.get(f) || 0, r.ts)); }
+  });
+
+  const acts = el('div', { className: 'acts' });
+  if (inside.length) {
+    if (zipPending && zipPending.forPath === here) {
+      const mb = (zipPending.blob.size / 1048576).toFixed(1) + ' MB';
+      acts.append(el('button', { className: 'btn', textContent: `Paylaş (${mb})`, onclick: doShare }));
+      acts.append(el('a', { className: 'btn gray', textContent: 'İndir', href: zipPending.url, download: zipPending.name }));
+      acts.append(el('button', { className: 'btn gray', textContent: 'Yeniden hazırla', onclick: () => { zipPending = null; renderGallery(); } }));
+    } else {
+      const zb = el('button', { className: 'btn', textContent: `Zip hazırla (${inside.length} dosya)` });
+      zb.onclick = () => prepareZip(inside, here, path[path.length - 1] || 'Saha-Kamera', zb);
+      acts.append(zb);
+    }
+    acts.append(el('button', { className: 'btn red', textContent: 'Bu klasörü sil', onclick: async () => {
+      if (!confirm(`${inside.length} dosya silinsin mi?`)) return;
+      for (const r of inside) await dbDel(r.id);
+      path = path.slice(0, -1); renderGallery();
+    } }));
+  } else body.append(el('p', { className: 'note', textContent: 'Burada henüz bir şey yok.' }));
+  body.append(acts);
+
+  [...folders.entries()].sort((a, b) => b[1] - a[1]).forEach(([f]) => {
+    body.append(el('div', { className: 'item', onclick: () => { path.push(f); renderGallery(); } }, [
+      el('div', { className: 'ic', textContent: '📁' }), el('div', { className: 'nm', textContent: f })]));
+  });
+  files.sort((a, b) => a.ts - b.ts || a.name.localeCompare(b.name)).forEach(r => {
+    const ic = el('div', { className: 'ic' }); ic.append(el('img', { src: URL.createObjectURL(r.blob) }));
+    body.append(el('div', { className: 'item' }, [ic,
+      el('div', { className: 'nm', onclick: () => openViewer(r) }, [r.name, el('small', { textContent: (r.blob.size / 1048576).toFixed(1) + ' MB' })]),
+      el('button', { className: 'x', textContent: '✕', onclick: async () => { if (confirm('Silinsin mi?')) { await dbDel(r.id); renderGallery(); } } })]));
+  });
+}
+async function shareBlob(blob, name, type) {
+  const file = new File([blob], name, { type });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+let zipPending = null;
+async function prepareZip(recs, here, name, btn) {
+  btn.disabled = true; btn.textContent = 'Zip hazırlanıyor…';
+  try {
+    const zip = await makeZip(recs.map(r => ({ name: r.dir + '/' + r.name, blob: r.blob })));
+    if (zipPending) URL.revokeObjectURL(zipPending.url);
+    zipPending = { blob: zip, name: sanitize(name) + '.zip', url: URL.createObjectURL(zip), forPath: here };
+    renderGallery();
+  } catch (e) {
+    toast('Zip hazırlanamadı: ' + (e && e.message || e));
+    btn.disabled = false; btn.textContent = 'Zip hazırla';
+  }
+}
+// iPhone paylaşım menüsü dokunuşun hemen içinde açılmalı: bu fonksiyonda await'ten önce hiçbir bekleme yok
+function doShare() {
+  const f = new File([zipPending.blob], zipPending.name, { type: 'application/zip' });
+  if (navigator.canShare && navigator.canShare({ files: [f] })) {
+    navigator.share({ files: [f] }).catch(e => { if (!e || e.name !== 'AbortError') toast('Paylaşım açılamadı. "İndir" düğmesini dene.'); });
+  } else {
+    toast('Bu cihaz dosya paylaşımını desteklemiyor. "İndir" düğmesini kullan.');
+  }
+}
+let viewing = null;
+function openViewer(r) { viewing = r; $('#vimg').src = URL.createObjectURL(r.blob); $('#viewer').classList.add('open'); }
+$('#vclose').onclick = () => $('#viewer').classList.remove('open');
+$('#vshare').onclick = () => viewing && shareBlob(viewing.blob, viewing.name, 'image/jpeg');
+
+/* ============ Başlatma ============ */
+$('#tagbtn').onclick = () => { renderTags(); openSheet('#tagsheet'); };
+$('#setbtn').onclick = () => { render(); openSheet('#setsheet'); };
+$('#galbtn').onclick = () => { path = []; renderGallery(); openSheet('#galsheet'); };
+$('#shutter').onclick = shoot;
+
+async function boot() {
+  const err = $('#starterr'); err.textContent = '';
+  if (location.protocol === 'file:' || !window.isSecureContext) {
+    err.textContent = 'Bu dosya doğrudan açılamaz. Uygulamanın https:// ile başlayan web adresinden açılması gerekir (README).'; return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    err.textContent = 'Bu tarayıcı kamerayı desteklemiyor. Safari ile https adresinden aç.'; return;
+  }
+  const compassP = startCompass();             // iOS pusula izni dokunuş anında istenmeli: hiçbir şeyden önce çağrılır
+  const compass = await compassP;
+  startGeo();
+  try { await openDB(); } catch (e) { err.textContent = 'Depolama açılamadı (özel gezinme kapalı olmalı).'; return; }
+  try {
+    await openCamera();
+    await findLenses();                         // etiketler izinden sonra görünür
+  } catch (e) {
+    err.textContent = 'Kamera izni verilmedi. Safari Ayarları > Kamera bölümünden izin ver.'; return;
+  }
+  $('#start').style.display = 'none';
+  if (!compass) toast('Pusula izni verilmedi, yön görünmeyecek');
+  loadLogo(); renderZoom(); drawOverlay();
+  try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
+  const all = await dbAll();
+  if (all.length) { const last = all.filter(r => !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
+  loop();
+}
+function loop() { drawStrip(); updateBar(); requestAnimationFrame(loop); }
+setInterval(drawOverlay, 1000);
+addEventListener('resize', drawOverlay);
+document.addEventListener('visibilitychange', async () => {
+  if (!document.hidden && stream && (!track || track.readyState === 'ended')) { try { await openCamera(lenses[lens]); renderZoom(); } catch (e) {} }
+});
+$('#go').onclick = boot;
+</script>
+</body>
+</html>
