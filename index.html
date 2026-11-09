@@ -297,13 +297,18 @@ const DEF = {
   pos: 'br', margin: 0, bar: false,
   logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9,
   font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
-  color: '#00FF1A', bg: '#000000', bgOp: 0.87, txOp: 0.70,
+  color: '#FFFFFF', bg: '#000000', bgOp: 0.70, txOp: 1,
+  sidBar: true, bg2: '#E3A800', bg2Op: 0.95, fg2: '#000000', talign: 'c', ver: 2,
   time: true, coords: true, coordFmt: 'dms', addr: true, street: true, district: true, city: false, country: true,
   sid: true, heading: false, compassPhoto: true, wide: true, aspect: '4:3', fsz: 0.018, res: 'fast', dual: true, quality: 0.95, sectorInName: true
 };
 let S = (() => {
-  try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('saha.settings.v1') || '{}')); }
-  catch (e) { return Object.assign({}, DEF); }
+  try {
+    const saved = JSON.parse(localStorage.getItem('saha.settings.v1') || '{}');
+    const o = Object.assign({}, DEF, saved);
+    if (saved.ver !== 2) ['color', 'bg', 'bgOp', 'txOp', 'sidBar', 'bg2', 'bg2Op', 'fg2', 'talign'].forEach(k => o[k] = DEF[k]);   // yeni görünüm (iki renkli blok)
+    o.ver = 2; return o;
+  } catch (e) { return Object.assign({}, DEF); }
 })();
 function save() { try { localStorage.setItem('saha.settings.v1', JSON.stringify(S)); } catch (e) {} applyAspect(); drawOverlay(); updateBar(); }
 
@@ -317,7 +322,7 @@ function applyAspect() {
   const b = document.getElementById('arbtn'); if (b) b.textContent = S.aspect;
 }
 const SIZES = { tiny: ['Çok küçük', 0.014], small: ['Küçük', 0.018], middle: ['Orta', 0.024], large: ['Büyük', 0.032] };
-const PALETTE = ['#00FF1A', '#FFFFFF', '#FFD60A', '#FF9F0A', '#1E88E5', '#2F4BFF', '#4DA3C7', '#FF453A', '#1C1C1E', '#000000'];
+const PALETTE = ['#FFFFFF', '#00FF1A', '#E3A800', '#FFD60A', '#FF9F0A', '#1E88E5', '#2F4BFF', '#4DA3C7', '#FF453A', '#1C1C1E', '#000000'];
 
 /* ============ Konum / adres ============ */
 const G = { lat: null, lon: null, acc: null, alt: null, addr: { street: '', district: '', city: '', country: '' }, lastGeo: null, lastGeoT: 0, busy: false };
@@ -498,14 +503,16 @@ function buildLines(d, hdg, snap) {
   const secS = (S.showSector && S.sector && !(S.compassPhoto && gotOrientation)) ? S.sector : '';
   const tagsS = S.activeTags.map(t => '#' + t);
   const hdgS = S.heading ? `Yön: ${Math.round(hdg) % 360}° ${cardinal(hdg)}` : '';
-  if (S.wide) {   // kompakt: tarih / koordinat / adres / SİTE ID + etiketler
-    return [
-      dateS, coordS,
-      [street, area].filter(Boolean).join(', '),
-      [siteS, secS, ...tagsS, hdgS].filter(Boolean).join('  ')
-    ].filter(Boolean);
+  let main, foot;   // main: üst blok, foot: SİTE ID şeridi
+  if (S.wide) {   // kompakt: tarih / koordinat / adres  +  SİTE ID + etiketler
+    main = [dateS, coordS, [street, area].filter(Boolean).join(', ')].filter(Boolean);
+    foot = [[siteS, secS, ...tagsS, hdgS].filter(Boolean).join('  ')].filter(Boolean);
+  } else {
+    main = [dateS, coordS, street, area].filter(Boolean);
+    foot = [siteS, secS, ...tagsS, hdgS].filter(Boolean);
   }
-  return [dateS, coordS, street, area, siteS, secS, ...tagsS, hdgS].filter(Boolean);
+  main.foot = foot;
+  return main;
 }
 const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return `rgba(${v >> 16 & 255},${v >> 8 & 255},${v & 255},${a})`; };
 let logoImg = null;
@@ -533,21 +540,32 @@ function paint(ctx, W, H, lines) {
     const ly = lp.startsWith('t') ? lm : H - lm - lh;
     ctx.globalAlpha = S.logoOp; ctx.drawImage(logoImg, lx, ly, lw, lh); ctx.globalAlpha = 1;
   }
-  if (!lines.length) return;
+  let mainL = Array.from(lines), footL = lines.foot || [];
+  if (!S.sidBar) { mainL = mainL.concat(footL); footL = []; }
+  if (!mainL.length && !footL.length) return;
   const fpx = Math.max(6, U * S.fsz), padd = fpx * 0.6, gap = fpx * 0.12;
   ctx.font = `${S.bold ? 'bold ' : ''}${fpx}px ${S.font}`;
   ctx.textBaseline = 'top';
   const maxTextW = W - 2 * m - 2 * padd;
-  const rows = []; lines.forEach(l => wrap(ctx, l, maxTextW).forEach(r => rows.push(r)));
-  const widest = Math.max(...rows.map(r => ctx.measureText(r).width));
+  const wrapAll = ls => { const r = []; ls.forEach(l => wrap(ctx, l, maxTextW).forEach(x => r.push(x))); return r; };
+  const mRows = wrapAll(mainL), fRows = wrapAll(footL), all = mRows.concat(fRows);
+  const widest = Math.max(...all.map(r => ctx.measureText(r).width));
   const tw = S.bar ? maxTextW : widest, bw = tw + 2 * padd;
-  const lineH = fpx * 1.18, bh = rows.length * lineH + (rows.length - 1) * gap + 2 * padd;
+  const lineH = fpx * 1.18;
+  const both = mRows.length && fRows.length;
+  const pM = both ? padd * 0.75 : padd, pF = both ? padd * 0.55 : padd;
+  const hOf = (n, pd) => n ? n * lineH + (n - 1) * gap + 2 * pd : 0;
+  const mH = hOf(mRows.length, pM), fH = hOf(fRows.length, pF), bh = mH + fH;
   const x = left ? m : right ? W - m - bw : (W - bw) / 2, y = top ? m : H - m - bh;
-  ctx.fillStyle = rgba(S.bg, S.bgOp); ctx.fillRect(x, y, bw, bh);
+  if (mH) { ctx.fillStyle = rgba(S.bg, S.bgOp); ctx.fillRect(x, y, bw, mH); }
+  if (fH) { ctx.fillStyle = rgba(S.bg2, S.bg2Op); ctx.fillRect(x, y + mH, bw, fH); }
+  const al = S.talign || 'c';
+  ctx.textAlign = al === 'l' ? 'left' : al === 'r' ? 'right' : 'center';
+  const tx = al === 'l' ? x + padd : al === 'r' ? x + bw - padd : x + bw / 2;
   ctx.fillStyle = rgba(S.color, S.txOp);
-  ctx.textAlign = left ? 'left' : right ? 'right' : 'center';
-  const tx = left ? x + padd : right ? x + bw - padd : x + bw / 2;
-  rows.forEach((r, i) => ctx.fillText(r, tx, y + padd + i * (lineH + gap)));
+  mRows.forEach((r, i) => ctx.fillText(r, tx, y + pM + i * (lineH + gap)));
+  ctx.fillStyle = rgba(S.fg2, S.txOp);
+  fRows.forEach((r, i) => ctx.fillText(r, tx, y + mH + pF + i * (lineH + gap)));
 }
 const ov = $('#ov'), octx = ov.getContext('2d');
 function drawOverlay() {
@@ -910,6 +928,7 @@ function render() {
     sel(b, 'Yazı bloğu konumu', 'pos', Object.entries(POS));
     rng(b, 'Kenar boşluğu', 'margin', 0, 0.08, 0.005, v => v === 0 ? '0 (Margins)' : pct(v));
     tog(b, 'Tam genişlik şerit', 'bar');
+    sel(b, 'Yazı hizası', 'talign', [['c', 'Ortala'], ['l', 'Sola'], ['r', 'Sağa']]);
     b.append(el('p', { className: 'note', textContent: 'Kapalıyken yazı bloğu sadece yazı kadar yer kaplar (half line).' }));
     b.append(el('h3', { textContent: 'Logo' }));
     sel(b, 'Logo konumu', 'logoPos', Object.entries(POS));
@@ -921,8 +940,11 @@ function render() {
     b.append(el('div', { className: 'f' }, [el('label', { textContent: 'Hazır boyut' }), ps]));
     rng(b, 'Yazı boyutu', 'fsz', 0.008, 0.05, 0.001, v => (v * 100).toFixed(1));
     tog(b, 'Kalın', 'bold');
-    colors(b, 'Yazı rengi', 'color');
-    colors(b, 'Arka plan rengi', 'bg');
+    colors(b, 'Üst blok yazı rengi', 'color');
+    colors(b, 'Üst blok arka plan rengi', 'bg');
+    b.append(el('h3', { textContent: 'SİTE ID şeridi' }));
+    tog(b, 'Ayrı renkli şerit (SİTE ID + etiketler)', 'sidBar', render);
+    if (S.sidBar) { colors(b, 'Şerit arka plan rengi', 'bg2'); colors(b, 'Şerit yazı rengi', 'fg2'); }
   } else if (tab === 'Giriş') {
     const f = el('div', { className: 'f' }), i = el('input', { type: 'text', value: S.siteID, autocapitalize: 'characters', autocomplete: 'off', oninput: () => { S.siteID = i.value.toUpperCase().trim(); save(); } });
     f.append(el('label', { textContent: 'SİTE ID' }), i);
@@ -937,7 +959,8 @@ function render() {
       t => { S.tags.push(t); S.activeTags.push(t); save(); render(); },
       t => { S.tags = S.tags.filter(x => x !== t); S.activeTags = S.activeTags.filter(x => x !== t); save(); render(); });
   } else if (tab === 'Opaklık') {
-    rng(b, 'Arka plan opaklığı', 'bgOp', 0, 1, 0.01, v => Math.round(v * 100));
+    rng(b, S.sidBar ? 'Üst blok arka plan opaklığı' : 'Arka plan opaklığı', 'bgOp', 0, 1, 0.01, v => Math.round(v * 100));
+    if (S.sidBar) rng(b, 'Şerit arka plan opaklığı', 'bg2Op', 0, 1, 0.01, v => Math.round(v * 100));
     rng(b, 'Yazı opaklığı', 'txOp', 0.1, 1, 0.01, v => Math.round(v * 100));
     rng(b, 'Logo opaklığı', 'logoOp', 0.1, 1, 0.01, v => Math.round(v * 100));
   } else if (tab === 'Format') {
