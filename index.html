@@ -108,7 +108,7 @@ h3{margin:18px 0 8px;font-size:14px;color:var(--mut);font-weight:700;text-transf
 .btn.red{background:#c62828}
 .btn.gray{background:#2a2d30}
 .logoprev{display:flex;align-items:center;gap:12px;margin-top:8px}
-.logoprev img{height:44px;max-width:50%;background:#fff;border-radius:4px}
+.logoprev img{height:44px;max-width:50%;border-radius:4px;background:repeating-conic-gradient(#8a8f94 0 25%,#c9cdd1 0 50%) 0 0/12px 12px}
 
 /* Galeri */
 .crumbs{padding:10px 16px;font-size:13px;color:var(--mut);border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
@@ -295,7 +295,7 @@ const DEF = {
   siteID: 'KBGTI', sectors: ['SEKTÖR-1', 'SEKTÖR-2', 'SEKTÖR-3'], sector: 'SEKTÖR-1', showSector: true, sectorOnPhoto: false,
   tags: ['Montaj Seri No', 'Söküm Seri No', 'Vinç'], activeTags: ['Montaj Seri No'],
   pos: 'br', margin: 0, bar: false,
-  logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9,
+  logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9, logoClear: true, logoTol: 0.2,
   font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
   color: '#FFFFFF', bg: '#000000', bgOp: 0.70, txOp: 1,
   sidBar: true, bg2: '#E3A800', bg2Op: 0.95, fg2: '#000000', talign: 'c', ver: 3,
@@ -517,11 +517,46 @@ function buildLines(d, hdg, snap) {
   return main;
 }
 const rgba = (hex, a) => { const v = parseInt(hex.slice(1), 16); return `rgba(${v >> 16 & 255},${v >> 8 & 255},${v & 255},${a})`; };
-let logoImg = null;
+let logoImg = null, logoRaw = null;
+// Düz renkli arka planı (beyaz, siyah vb.) kenarlardan başlayarak şeffaf yapar; logonun içindeki aynı renkler korunur.
+function keyLogo(img) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, w, h);
+  if (!S.logoClear) return c;
+  const id = x.getImageData(0, 0, w, h), d = id.data;
+  const at = (px, py) => (py * w + px) * 4;
+  const corners = [at(0, 0), at(w - 1, 0), at(0, h - 1), at(w - 1, h - 1)];
+  if (corners.some(k => d[k + 3] < 200)) return c;   // zaten şeffaf
+  const med = ch => { const v = corners.map(k => d[k + ch]).sort((a, b) => a - b); return (v[1] + v[2]) / 2; };
+  const R = med(0), G = med(1), B = med(2), tol = S.logoTol, soft = tol * 1.8;
+  const dist = k => Math.max(Math.abs(d[k] - R), Math.abs(d[k + 1] - G), Math.abs(d[k + 2] - B)) / 255;
+  const seen = new Uint8Array(w * h), q = new Int32Array(w * h); let qh = 0, qt = 0;
+  const push = (px, py) => {
+    const n = py * w + px; if (seen[n]) return; seen[n] = 1;
+    const k = n * 4, dd = dist(k);
+    if (dd <= tol) { d[k + 3] = 0; q[qt++] = n; }
+    else if (dd <= soft) d[k + 3] = Math.round(d[k + 3] * (dd - tol) / (soft - tol));
+  };
+  for (let i = 0; i < w; i++) { push(i, 0); push(i, h - 1); }
+  for (let j = 0; j < h; j++) { push(0, j); push(w - 1, j); }
+  while (qh < qt) {
+    const n = q[qh++], px = n % w, py = (n - px) / w;
+    if (px > 0) push(px - 1, py); if (px < w - 1) push(px + 1, py);
+    if (py > 0) push(px, py - 1); if (py < h - 1) push(px, py + 1);
+  }
+  x.putImageData(id, 0, 0);
+  return c;
+}
+function buildLogo() {
+  if (!logoRaw) { logoImg = null; return; }
+  logoImg = keyLogo(logoRaw); drawOverlay();
+  const pv = document.querySelector('.logoprev img'); if (pv) pv.src = logoImg.toDataURL('image/png');
+}
 function loadLogo() {
-  logoImg = null;
+  logoImg = null; logoRaw = null;
   if (!S.logo) return;
-  const i = new Image(); i.onload = () => { logoImg = i; drawOverlay(); }; i.src = S.logo;
+  const i = new Image(); i.onload = () => { logoRaw = i; buildLogo(); }; i.src = S.logo;
 }
 function wrap(ctx, text, maxW) {
   if (ctx.measureText(text).width <= maxW) return [text];
@@ -885,9 +920,9 @@ function tog(box, label, key, after) {
   const i = el('input', { type: 'checkbox', checked: !!S[key], onchange: () => { S[key] = i.checked; save(); if (after) after(); } });
   box.append(el('div', { className: 'tg' }, [el('span', { textContent: label }), i]));
 }
-function rng(box, label, key, min, max, step, fmt) {
+function rng(box, label, key, min, max, step, fmt, after) {
   const lb = el('label', { textContent: label + ': ' + fmt(S[key]) });
-  const i = el('input', { type: 'range', min, max, step, value: S[key], oninput: () => { S[key] = parseFloat(i.value); lb.textContent = label + ': ' + fmt(S[key]); save(); } });
+  const i = el('input', { type: 'range', min, max, step, value: S[key], oninput: () => { S[key] = parseFloat(i.value); lb.textContent = label + ': ' + fmt(S[key]); save(); if (after) after(); } });
   box.append(el('div', { className: 'f' }, [lb, i]));
 }
 function sel(box, label, key, opts, after) {
@@ -935,7 +970,7 @@ function render() {
     b.append(el('p', { className: 'note', textContent: 'Kapalıyken yazı bloğu sadece yazı kadar yer kaplar (half line).' }));
     b.append(el('h3', { textContent: 'Logo' }));
     sel(b, 'Logo konumu', 'logoPos', Object.entries(POS));
-    rng(b, 'Logo boyutu', 'logoScale', 0.05, 0.5, 0.01, pct);
+    rng(b, 'Logo boyutu', 'logoScale', 0.05, 0.8, 0.01, pct);
   } else if (tab === 'Yazı') {
     sel(b, 'Yazı tipi', 'font', FONTS.map(f => [f[1], f[0]]));
     const ps = el('select', { onchange: () => { S.fsz = parseFloat(ps.value); save(); render(); } });
@@ -955,7 +990,17 @@ function render() {
     b.append(el('h3', { textContent: 'Logo (filigran)' }));
     const file = el('input', { type: 'file', accept: 'image/*', hidden: true, onchange: () => importLogo(file.files[0]) });
     b.append(file, el('button', { className: 'btn', textContent: 'Logo içe aktar', onclick: () => file.click() }));
-    if (S.logo) b.append(el('div', { className: 'logoprev' }, [el('img', { src: S.logo }), el('button', { className: 'btn red', textContent: 'Kaldır', onclick: () => { S.logo = null; logoImg = null; save(); render(); } })]));
+    if (S.logo) b.append(el('div', { className: 'logoprev' }, [el('img', { src: logoImg ? logoImg.toDataURL('image/png') : S.logo }), el('button', { className: 'btn red', textContent: 'Kaldır', onclick: () => { S.logo = null; logoImg = null; save(); render(); } })]));
+    if (S.logo) {
+      rng(b, 'Logo boyutu', 'logoScale', 0.05, 0.8, 0.01, v => '%' + Math.round(v * 100));
+      sel(b, 'Logo konumu', 'logoPos', Object.entries(POS));
+      rng(b, 'Logo opaklığı', 'logoOp', 0.1, 1, 0.01, v => Math.round(v * 100));
+      tog(b, 'Logo arka planını şeffaf yap', 'logoClear', () => { buildLogo(); render(); });
+      if (S.logoClear) {
+        rng(b, 'Şeffaflık hassasiyeti', 'logoTol', 0.02, 0.6, 0.01, v => Math.round(v * 100), buildLogo);
+        b.append(el('p', { className: 'note', textContent: 'Logonun kenarındaki düz renk (beyaz, siyah vb.) silinir. Logonun kenarı yenmeye başlarsa hassasiyeti düşür, arka plan kalırsa artır. Zaten şeffaf PNG\'lere dokunulmaz.' }));
+      }
+    }
     b.append(el('h3', { textContent: 'Etiketler (#)' }));
     pills(b, S.tags, t => S.activeTags.includes(t),
       t => { S.activeTags = S.activeTags.includes(t) ? S.activeTags.filter(x => x !== t) : [...S.activeTags, t]; save(); render(); },
