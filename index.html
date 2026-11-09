@@ -292,22 +292,24 @@ const sanitize = s => String(s).replace(/[\/\\:]/g, '-').trim();
 
 /* ============ Ayarlar ============ */
 const DEF = {
-  siteID: 'KBGTI', sectors: ['SEKTÖR-1', 'SEKTÖR-2'], sector: 'SEKTÖR-1', showSector: true,
+  siteID: 'KBGTI', sectors: ['SEKTÖR-1', 'SEKTÖR-2', 'SEKTÖR-3'], sector: 'SEKTÖR-1', showSector: true, sectorOnPhoto: false,
   tags: ['Montaj Seri No', 'Söküm Seri No', 'Vinç'], activeTags: ['Montaj Seri No'],
   pos: 'br', margin: 0, bar: false,
   logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9,
   font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
   color: '#FFFFFF', bg: '#000000', bgOp: 0.70, txOp: 1,
-  sidBar: true, bg2: '#E3A800', bg2Op: 0.95, fg2: '#000000', talign: 'c', ver: 2,
+  sidBar: true, bg2: '#E3A800', bg2Op: 0.95, fg2: '#000000', talign: 'c', ver: 3,
   time: true, coords: true, coordFmt: 'dms', addr: true, street: true, district: true, city: false, country: true,
-  sid: true, heading: false, compassPhoto: true, wide: true, aspect: '4:3', fsz: 0.018, res: 'fast', dual: true, quality: 0.95, sectorInName: true
+  sid: true, heading: false, compassPhoto: true, wide: true, aspect: '4:3', fsz: 0.018, res: 'fast', dual: true, quality: 0.95, sectorInName: false
 };
 let S = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem('saha.settings.v1') || '{}');
     const o = Object.assign({}, DEF, saved);
-    if (saved.ver !== 2) ['color', 'bg', 'bgOp', 'txOp', 'sidBar', 'bg2', 'bg2Op', 'fg2', 'talign'].forEach(k => o[k] = DEF[k]);   // yeni görünüm (iki renkli blok)
-    o.ver = 2; return o;
+    const v = saved.ver || 1;
+    if (v < 2) ['color', 'bg', 'bgOp', 'txOp', 'sidBar', 'bg2', 'bg2Op', 'fg2', 'talign'].forEach(k => o[k] = DEF[k]);   // iki renkli blok
+    if (v < 3) { o.sectorInName = false; o.sectorOnPhoto = false; if (!o.sectors.includes('SEKTÖR-3')) o.sectors = [...o.sectors, 'SEKTÖR-3']; }   // sektör sadece klasör
+    o.ver = 3; return o;
   } catch (e) { return Object.assign({}, DEF); }
 })();
 function save() { try { localStorage.setItem('saha.settings.v1', JSON.stringify(S)); } catch (e) {} applyAspect(); drawOverlay(); updateBar(); }
@@ -459,7 +461,7 @@ function paintCompass(c, W, H, hd, acc, alt) {
   c.fillStyle = '#00f51a'; c.fillRect(0, 58, wd, 30);
   c.fillStyle = '#000'; c.textBaseline = 'middle'; c.font = '700 14px -apple-system,Arial,sans-serif';
   c.textAlign = 'left'; c.fillText(`${Math.round(hd) % 360}° ${cardinal(hd)}`, 10, 73);
-  c.textAlign = 'center'; if (S.showSector && S.sector) c.fillText('● ' + S.sector, wd / 2, 73);
+  c.textAlign = 'center'; if (S.sectorOnPhoto && S.sector) c.fillText('● ' + S.sector, wd / 2, 73);
   c.textAlign = 'right';
   c.fillText((acc != null ? `± ${Math.round(acc)}m   ` : '') + (alt != null ? `▲ ${Math.round(alt)} m` : ''), wd - 10, 73);
   c.restore();
@@ -500,7 +502,7 @@ function buildLines(d, hdg, snap) {
     area = p.join(' ');
   }
   const siteS = (S.sid && S.siteID) ? 'SİTE ID: ' + S.siteID : '';
-  const secS = (S.showSector && S.sector && !(S.compassPhoto && gotOrientation)) ? S.sector : '';
+  const secS = (S.sectorOnPhoto && S.sector && !(S.compassPhoto && gotOrientation)) ? S.sector : '';
   const tagsS = S.activeTags.map(t => '#' + t);
   const hdgS = S.heading ? `Yön: ${Math.round(hdg) % 360}° ${cardinal(hdg)}` : '';
   let main, foot;   // main: üst blok, foot: SİTE ID şeridi
@@ -907,8 +909,9 @@ function renderTags() {
     t => { S.sector = S.sector === t ? '' : t; save(); renderTags(); },
     t => { S.sectors.push(t); S.sector = t; save(); renderTags(); },
     t => { S.sectors = S.sectors.filter(x => x !== t); if (S.sector === t) S.sector = ''; save(); renderTags(); });
-  tog(b, 'Kamerada göster', 'showSector', renderTags);
-  b.append(el('p', { className: 'note', textContent: `Seçtiğin sektör, gün klasörünün içinde ayrı klasör olur: ${dayFolder(new Date())} / ${S.sector || '(sektör yok)'}` }));
+  tog(b, 'Ekranda göster', 'showSector', renderTags);
+  tog(b, 'Fotoğrafa yaz', 'sectorOnPhoto', renderTags);
+  b.append(el('p', { className: 'note', textContent: `Seçtiğin sektör sadece klasör olur (dosya adına ve fotoğrafa yazılmaz): ${dayFolder(new Date())} / ${S.sector || '(sektör yok)'}` }));
   b.append(el('h3', { textContent: 'Etiketler (#)' }));
   pills(b, S.tags, t => S.activeTags.includes(t),
     t => { S.activeTags = S.activeTags.includes(t) ? S.activeTags.filter(x => x !== t) : [...S.activeTags, t]; save(); renderTags(); },
@@ -974,7 +977,7 @@ function render() {
     b.append(el('h3', { textContent: 'Adres' }));
     tog(b, 'Adres göster', 'addr'); tog(b, 'Sokak / cadde', 'street'); tog(b, 'İlçe / semt', 'district'); tog(b, 'Şehir', 'city'); tog(b, 'Ülke', 'country');
     b.append(el('h3', { textContent: 'Saha bilgisi' }));
-    tog(b, 'SİTE ID satırı', 'sid'); tog(b, 'Sektör satırı', 'showSector');
+    tog(b, 'SİTE ID satırı', 'sid'); tog(b, 'Sektör (fotoğrafa yaz)', 'sectorOnPhoto');
   } else {
     sel(b, 'Fotoğraf çözünürlüğü', 'res', [['fast', 'Hızlı (5 MP, önerilir)'], ['high', 'Yüksek (12 MP, daha yavaş)']], () => { if (!rec && stream) openCamera(lenses[lens]).then(renderZoom).catch(() => toast('Kamera yeniden açılamadı')); });
     sel(b, 'Kamera boyutu', 'aspect', [['4:3', '4:3 (iPhone fotoğraf)'], ['16:9', '16:9 (uzun, tam ekran)'], ['1:1', '1:1 (kare)']]);
