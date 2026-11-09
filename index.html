@@ -238,7 +238,7 @@ button.item{width:100%;text-align:left;color:inherit;font:inherit;background:non
       lh.setUint32(22, data.length, true);
       lh.setUint16(26, nm.length, true);
       lh.setUint16(28, 0, true);
-      parts.push(lh.buffer, nm, data);
+      parts.push(lh.buffer, nm, e.blob);   // veriyi bellekte tutma, orijinal blob'u kullan
 
       const ch = new DataView(new ArrayBuffer(46));
       ch.setUint32(0, 0x02014b50, true);
@@ -291,7 +291,7 @@ const DEF = {
   font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
   color: '#00FF1A', bg: '#000000', bgOp: 0.87, txOp: 0.70,
   time: true, coords: true, coordFmt: 'dms', addr: true, street: true, district: true, city: false, country: true,
-  sid: true, heading: false, compassPhoto: true, wide: true, aspect: '4:3', fsz: 0.018, dual: true, quality: 0.95, sectorInName: true
+  sid: true, heading: false, compassPhoto: true, wide: true, aspect: '4:3', fsz: 0.018, res: 'fast', dual: true, quality: 0.95, sectorInName: true
 };
 let S = (() => {
   try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('saha.settings.v1') || '{}')); }
@@ -428,8 +428,10 @@ function stripPaint(c, w, h, hd) {
   c.strokeStyle = '#ff2d20'; c.lineWidth = 1.5;
   c.beginPath(); c.moveTo(w / 2, 0); c.lineTo(w / 2, base - 52); c.stroke();
 }
+let stripW = 0;
+if (window.ResizeObserver) new ResizeObserver(en => { stripW = en[0].contentRect.width; lastHdgDrawn = -1; }).observe(strip);
 function drawStrip() {
-  const dpr = devicePixelRatio || 1, w = strip.clientWidth, h = strip.clientHeight;
+  const dpr = Math.min(devicePixelRatio || 1, 2), w = stripW || strip.clientWidth, h = 58;
   if (strip.width !== w * dpr) { strip.width = w * dpr; strip.height = h * dpr; }
   sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   sctx.clearRect(0, 0, w, h);
@@ -485,14 +487,14 @@ function buildLines(d, hdg, snap) {
     area = p.join(' ');
   }
   const siteS = (S.sid && S.siteID) ? 'SİTE ID: ' + S.siteID : '';
-  const secS = (S.showSector && S.sector) ? S.sector : '';
+  const secS = (S.showSector && S.sector && !(S.compassPhoto && gotOrientation)) ? S.sector : '';
   const tagsS = S.activeTags.map(t => '#' + t);
   const hdgS = S.heading ? `Yön: ${Math.round(hdg) % 360}° ${cardinal(hdg)}` : '';
-  if (S.wide) {   // geniş dikdörtgen: en fazla 3 satır
+  if (S.wide) {   // kompakt: tarih / koordinat / adres / SİTE ID + etiketler
     return [
-      [dateS, coordS].filter(Boolean).join('   '),
+      dateS, coordS,
       [street, area].filter(Boolean).join(', '),
-      [siteS, secS, ...tagsS, hdgS].filter(Boolean).join('   ')
+      [siteS, secS, ...tagsS, hdgS].filter(Boolean).join('  ')
     ].filter(Boolean);
   }
   return [dateS, coordS, street, area, siteS, secS, ...tagsS, hdgS].filter(Boolean);
@@ -555,9 +557,10 @@ let stream = null, track = null, lens = 'main', zoomVal = 1, digital = 1, lenses
 
 async function openCamera(deviceId) {
   if (stream) stream.getTracks().forEach(t => t.stop());
+  const RW = S.res === 'high' ? 4032 : 2560, RH = S.res === 'high' ? 3024 : 1920;
   const video = deviceId
-    ? { deviceId: { exact: deviceId }, width: { ideal: 4032 }, height: { ideal: 3024 } }
-    : { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } };
+    ? { deviceId: { exact: deviceId }, width: { ideal: RW }, height: { ideal: RH } }
+    : { facingMode: { ideal: 'environment' }, width: { ideal: RW }, height: { ideal: RH } };
   stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
   track = stream.getVideoTracks()[0];
   vid.srcObject = stream;
@@ -644,16 +647,51 @@ $('#stage').addEventListener('click', e => {
 let db = null;
 function openDB() {
   return new Promise((res, rej) => {
-    const q = indexedDB.open('saha-kamera', 1);
-    q.onupgradeneeded = () => { q.result.createObjectStore('files', { keyPath: 'id', autoIncrement: true }).createIndex('dir', 'dir'); };
+    const q = indexedDB.open('saha-kamera', 2);
+    q.onupgradeneeded = ev => {
+      const d = q.result, t = q.transaction;
+      if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
+      const m = d.createObjectStore('meta', { keyPath: 'id' });
+      if (ev.oldVersion >= 1) {            // eski kayıtlar için küçük liste kayıtları üret
+        t.objectStore('files').openCursor().onsuccess = e => {
+          const c = e.target.result; if (!c) return;
+          const r = c.value; m.put({ id: r.id, dir: r.dir, name: r.name, ts: r.ts, size: r.blob ? r.blob.size : 0, type: r.blob ? r.blob.type : '', thumb: null });
+          c.continue();
+        };
+      }
+    };
     q.onsuccess = () => { db = q.result; res(); };
     q.onerror = () => rej(q.error);
   });
 }
-const tx = (mode) => db.transaction('files', mode).objectStore('files');
-const dbAll = () => new Promise((res, rej) => { const q = tx('readonly').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
-const dbPut = rec => new Promise((res, rej) => { const q = tx('readwrite').add(rec); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
-const dbDel = id => new Promise((res, rej) => { const q = tx('readwrite').delete(id); q.onsuccess = () => res(); q.onerror = () => rej(q.error); });
+// Liste (meta) küçüktür; fotoğrafın kendisi sadece gerektiğinde okunur. Böylece fotoğraf sayısı artsa da uygulama yavaşlamaz.
+const metaAll = () => new Promise((res, rej) => { const q = db.transaction('meta').objectStore('meta').getAll(); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+const blobOf = id => new Promise((res, rej) => { const q = db.transaction('files').objectStore('files').get(id); q.onsuccess = () => res(q.result && q.result.blob); q.onerror = () => rej(q.error); });
+function putFile(rec) {
+  return new Promise((res, rej) => {
+    const t = db.transaction(['files', 'meta'], 'readwrite');
+    const rq = t.objectStore('files').add({ blob: rec.blob, dir: rec.dir, name: rec.name, ts: rec.ts });
+    rq.onsuccess = () => t.objectStore('meta').put({ id: rq.result, dir: rec.dir, name: rec.name, ts: rec.ts, size: rec.blob.size, type: rec.blob.type, thumb: rec.thumb || null });
+    t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+  });
+}
+function delFile(id) {
+  return new Promise((res, rej) => {
+    const t = db.transaction(['files', 'meta'], 'readwrite');
+    t.objectStore('files').delete(id); t.objectStore('meta').delete(id);
+    t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+  });
+}
+// Dosya numarası dokunuş anında, beklemeden verilir (seri çekim)
+const counters = new Map();
+function seedCounters(all) {
+  all.forEach(r => {
+    const m = /^(.*)_(\d+)(_temiz)?\.[a-z0-9]+$/i.exec(r.name); if (!m) return;
+    const key = r.dir + '|' + m[1], n = parseInt(m[2], 10);
+    if (n > (counters.get(key) || 0)) counters.set(key, n);
+  });
+}
+function takeNumber(dir, base) { const k = dir + '|' + base, n = (counters.get(k) || 0) + 1; counters.set(k, n); return n; }
 
 function dayFolder(d) { return `${sanitize(S.siteID || 'SAHA')}_${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
 function baseName() {
@@ -677,38 +715,46 @@ function cropRect(A) {
   sw /= digital; sh /= digital;
   return [(vw - sw) / 2, (vh - sh) / 2, sw, sh];
 }
-async function nextName(dir, base) {
-  const all = await dbAll(); let n = 0;
-  all.forEach(r => { if (r.dir === dir && r.name.startsWith(base + '_')) { const m = parseInt(r.name.slice(base.length + 1), 10); if (m > n) n = m; } });
-  return n + 1;
-}
-async function shoot() {
-  if (shooting || !vid.videoWidth) return;
-  shooting = true;
-  const fl = $('#flash'); fl.style.opacity = .8; setTimeout(() => fl.style.opacity = 0, 100);
+let pendingSaves = 0;
+// Çekim anında sadece görüntü alınır (anında biter); sıkıştırma ve kayıt arka planda sürer. Böylece art arda çekilebilir.
+function shoot() {
+  if (!vid.videoWidth) return;
+  if (pendingSaves >= 4) { toast('Kayıtlar sürüyor, birkaç saniye bekle'); return; }
+  const fl = $('#flash'); fl.style.opacity = .6; setTimeout(() => fl.style.opacity = 0, 80);
   try {
     const now = new Date(), snap = { lat: G.lat, lon: G.lon, addr: { ...G.addr } }, hdg = heading, accS = G.acc, altS = G.alt;
     const A = stageAspect(), [sx, sy, sw, sh] = cropRect(A);
     let ow, oh;
     if (A >= 1) { ow = Math.round(Math.min(sw, 2880)); oh = Math.round(ow / A); } else { oh = Math.round(Math.min(sh, 2880)); ow = Math.round(oh * A); }
     const c = el('canvas'); c.width = ow; c.height = oh;
-    const x = c.getContext('2d');
-    x.drawImage(vid, sx, sy, sw, sh, 0, 0, ow, oh);
-    const clean = S.dual ? await toBlob(c, S.quality) : null;
+    c.getContext('2d').drawImage(vid, sx, sy, sw, sh, 0, 0, ow, oh);
+    let cleanP = null, sc = c;
+    if (S.dual) {
+      cleanP = toBlob(c, S.quality);                    // temiz kopya: bu tuval artık değişmez
+      sc = el('canvas'); sc.width = ow; sc.height = oh; sc.getContext('2d').drawImage(c, 0, 0);
+    }
+    const x = sc.getContext('2d');
     paint(x, ow, oh, buildLines(now, hdg, snap));
     if (S.compassPhoto && gotOrientation) paintCompass(x, ow, oh, hdg, accS, altS);
-    const stamped = await toBlob(c, S.quality);
+    const stampedP = toBlob(sc, S.quality);
+    const tc = el('canvas'), k = 160 / Math.max(ow, oh); tc.width = Math.round(ow * k); tc.height = Math.round(oh * k);
+    tc.getContext('2d').drawImage(sc, 0, 0, tc.width, tc.height);
+    const thumbP = toBlob(tc, 0.7);
 
     const dir = dayFolder(now) + (S.sector ? '/' + sanitize(S.sector) : '');
-    const base = baseName(), n = await nextName(dir, base), name = `${base}_${n}`;
-    await dbPut({ dir, name: name + '.jpg', blob: stamped, ts: now.getTime() });
-    if (clean) await dbPut({ dir, name: name + '_temiz.jpg', blob: clean, ts: now.getTime() });
-    setThumb(stamped);
-    toast('Kaydedildi: ' + name + (clean ? ' (+ temiz)' : ''));
-  } catch (e) {
-    toast('Kaydedilemedi: ' + (e && e.message || e));
-  }
-  shooting = false;
+    const base = baseName(), n = takeNumber(dir, base), name = `${base}_${n}`, ts = now.getTime();
+    pendingSaves++;
+    (async () => {
+      try {
+        const [clean, stamped, thumb] = await Promise.all([cleanP, stampedP, thumbP]);
+        await putFile({ dir, name: name + '.jpg', ts, blob: stamped, thumb });
+        if (clean) await putFile({ dir, name: name + '_temiz.jpg', ts, blob: clean, thumb });
+        setThumb(thumb || stamped);
+        toast('Kaydedildi: ' + name + (clean ? ' (+ temiz)' : '') + (pendingSaves > 1 ? `  · ${pendingSaves - 1} sırada` : ''));
+      } catch (e) { toast('Kaydedilemedi: ' + (e && e.message || e)); }
+      finally { pendingSaves--; c.width = c.height = 0; sc.width = sc.height = 0; tc.width = tc.height = 0; }
+    })();
+  } catch (e) { toast('Çekilemedi: ' + (e && e.message || e)); }
 }
 
 /* ============ Video (yazı ve pusula şeridi videoya basılır) ============ */
@@ -775,15 +821,17 @@ async function finishRec(R) {
     const type = (R.mr.mimeType || R.mime || 'video/mp4').split(';')[0];
     const blob = new Blob(R.chunks, { type });
     if (!blob.size) throw new Error('boş kayıt');
-    const ext = type.includes('mp4') ? 'mp4' : 'webm', n = await nextName(R.dir, R.base), name = `${R.base}_${n}.${ext}`;
-    await dbPut({ dir: R.dir, name, blob, ts: Date.now() });
+    const ext = type.includes('mp4') ? 'mp4' : 'webm', n = takeNumber(R.dir, R.base), name = `${R.base}_${n}.${ext}`;
+    await putFile({ dir: R.dir, name, blob, ts: Date.now() });
     toast('Video kaydedildi: ' + name);
   } catch (e) { toast('Video kaydedilemedi: ' + (e && e.message || e)); }
 }
 function onShutter() { if (mode === 'video') { rec ? stopRec() : startRec(); } else shoot(); }
+let thumbUrl = null;
 function setThumb(blob) {
-  const u = URL.createObjectURL(blob), b = $('#galbtn');
-  b.innerHTML = ''; b.append(el('img', { src: u }));
+  if (thumbUrl) URL.revokeObjectURL(thumbUrl);
+  thumbUrl = URL.createObjectURL(blob);
+  const b = $('#galbtn'); b.innerHTML = ''; b.append(el('img', { src: thumbUrl }));
 }
 let toastT;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 2600); }
@@ -886,7 +934,7 @@ function render() {
     rng(b, 'Logo opaklığı', 'logoOp', 0.1, 1, 0.01, v => Math.round(v * 100));
   } else if (tab === 'Format') {
     const lay = el('select', { onchange: () => { S.wide = lay.value === '1'; save(); } });
-    [['1', 'Geniş dikdörtgen (3 satır)'], ['0', 'Alt alta (dar)']].forEach(([v, t]) => { const o = el('option', { value: v, textContent: t }); if ((S.wide ? '1' : '0') === v) o.selected = true; lay.append(o); });
+    [['1', 'Kompakt (4 satır)'], ['0', 'Alt alta (dar)']].forEach(([v, t]) => { const o = el('option', { value: v, textContent: t }); if ((S.wide ? '1' : '0') === v) o.selected = true; lay.append(o); });
     b.append(el('div', { className: 'f' }, [el('label', { textContent: 'Yazı bloğu düzeni' }), lay]));
     tog(b, 'Tarih / saat', 'time'); tog(b, 'Koordinat', 'coords');
     sel(b, 'Koordinat biçimi', 'coordFmt', [['dms', "Derece  N 35° 11' 36\""], ['dec', 'Ondalık  35.193333']]);
@@ -897,6 +945,7 @@ function render() {
     b.append(el('h3', { textContent: 'Saha bilgisi' }));
     tog(b, 'SİTE ID satırı', 'sid'); tog(b, 'Sektör satırı', 'showSector');
   } else {
+    sel(b, 'Fotoğraf çözünürlüğü', 'res', [['fast', 'Hızlı (5 MP, önerilir)'], ['high', 'Yüksek (12 MP, daha yavaş)']], () => { if (!rec && stream) openCamera(lenses[lens]).then(renderZoom).catch(() => toast('Kamera yeniden açılamadı')); });
     sel(b, 'Kamera boyutu', 'aspect', [['4:3', '4:3 (iPhone fotoğraf)'], ['16:9', '16:9 (uzun, tam ekran)'], ['1:1', '1:1 (kare)']]);
     tog(b, 'Her çekimde 2 foto (yazılı + temiz)', 'dual');
     b.append(el('p', { className: 'note', textContent: 'Temiz foto aynı klasöre "_temiz" son ekiyle kaydedilir.' }));
@@ -919,9 +968,12 @@ function importLogo(f) {
 }
 
 /* ============ Galeri ============ */
-let path = [];
+let path = [], thumbUrls = [], zipPending = null, photosPending = null;
+const isVidName = n => /\.(mp4|webm|mov)$/i.test(n);
+const isCleanName = n => /_temiz\.jpg$/i.test(n);
 async function renderGallery() {
-  const all = await dbAll(), cr = $('#crumbs'), body = $('#galbody');
+  thumbUrls.forEach(u => URL.revokeObjectURL(u)); thumbUrls = [];
+  const all = await metaAll(), cr = $('#crumbs'), body = $('#galbody');
   cr.innerHTML = ''; body.innerHTML = '';
   const go = n => { path = path.slice(0, n); renderGallery(); };
   cr.append(el('button', { type: 'button', textContent: 'Kayıtlar', onclick: () => go(0) }));
@@ -937,19 +989,32 @@ async function renderGallery() {
 
   const acts = el('div', { className: 'acts' });
   if (inside.length) {
+    // Telefonun Fotoğraflar uygulamasına kaydet (paylaşım menüsünde "Görüntüleri Kaydet")
+    if (photosPending && photosPending.forPath === here) {
+      const P = photosPending, total = Math.ceil(P.files.length / 40);
+      acts.append(el('button', { className: 'btn', textContent: `Kaydet ${total > 1 ? (P.i + 1) + '/' + total + ' ' : ''}(${Math.min(40, P.files.length - P.i * 40)} dosya)`, onclick: doSavePhotos }));
+      acts.append(el('button', { className: 'btn gray', textContent: 'İptal', onclick: () => { photosPending = null; renderGallery(); } }));
+    } else {
+      [['Yazılı foto/videoları telefona kaydet', inside.filter(r => !isCleanName(r.name))], ['Temiz fotoları telefona kaydet', inside.filter(r => isCleanName(r.name))]].forEach(([label, recs]) => {
+        if (!recs.length) return;
+        const b = el('button', { className: 'btn', textContent: `${label} (${recs.length})` });
+        b.onclick = () => preparePhotos(recs, here, b);
+        acts.append(b);
+      });
+    }
     if (zipPending && zipPending.forPath === here) {
       const mb = (zipPending.blob.size / 1048576).toFixed(1) + ' MB';
-      acts.append(el('button', { className: 'btn', textContent: `Paylaş (${mb})`, onclick: doShare }));
+      acts.append(el('button', { className: 'btn', textContent: `Zip paylaş (${mb})`, onclick: doShare }));
       acts.append(el('a', { className: 'btn gray', textContent: 'İndir', href: zipPending.url, download: zipPending.name }));
       acts.append(el('button', { className: 'btn gray', textContent: 'Yeniden hazırla', onclick: () => { zipPending = null; renderGallery(); } }));
     } else {
-      const zb = el('button', { className: 'btn', textContent: `Zip hazırla (${inside.length} dosya)` });
+      const zb = el('button', { className: 'btn gray', textContent: `Zip hazırla (${inside.length} dosya)` });
       zb.onclick = () => prepareZip(inside, here, path[path.length - 1] || 'Saha-Kamera', zb);
       acts.append(zb);
     }
     acts.append(el('button', { className: 'btn red', textContent: 'Bu klasörü sil', onclick: async () => {
       if (!confirm(`${inside.length} dosya silinsin mi?`)) return;
-      for (const r of inside) await dbDel(r.id);
+      for (const r of inside) await delFile(r.id);
       path = path.slice(0, -1); renderGallery();
     } }));
   } else body.append(el('p', { className: 'note', textContent: 'Burada henüz bir şey yok.' }));
@@ -960,12 +1025,13 @@ async function renderGallery() {
       el('div', { className: 'ic', textContent: '📁' }), el('div', { className: 'nm', textContent: f })]));
   });
   files.sort((a, b) => a.ts - b.ts || a.name.localeCompare(b.name)).forEach(r => {
-    const isVid = /\.(mp4|webm|mov)$/i.test(r.name);
     const ic = el('div', { className: 'ic', onclick: () => openViewer(r) });
-    if (isVid) ic.textContent = '▶'; else ic.append(el('img', { src: URL.createObjectURL(r.blob) }));
+    if (isVidName(r.name)) ic.textContent = '▶';
+    else if (r.thumb) { const u = URL.createObjectURL(r.thumb); thumbUrls.push(u); ic.append(el('img', { src: u })); }
+    else ic.textContent = '🖼';
     body.append(el('div', { className: 'item' }, [ic,
-      el('div', { className: 'nm', onclick: () => openViewer(r) }, [r.name, el('small', { textContent: (r.blob.size / 1048576).toFixed(1) + ' MB' })]),
-      el('button', { className: 'x', textContent: '✕', onclick: async () => { if (confirm('Silinsin mi?')) { await dbDel(r.id); renderGallery(); } } })]));
+      el('div', { className: 'nm', onclick: () => openViewer(r) }, [r.name, el('small', { textContent: ((r.size || 0) / 1048576).toFixed(1) + ' MB' })]),
+      el('button', { className: 'x', textContent: '✕', onclick: async () => { if (confirm('Silinsin mi?')) { await delFile(r.id); renderGallery(); } } })]));
   });
 }
 async function shareBlob(blob, name, type) {
@@ -976,11 +1042,30 @@ async function shareBlob(blob, name, type) {
   const a = el('a', { href: URL.createObjectURL(blob), download: name });
   document.body.append(a); a.click(); a.remove();
 }
-let zipPending = null;
+// 1. adım: dosyaları hazırla (beklenebilir). 2. adım: paylaşım menüsü dokunuşla açılır.
+async function preparePhotos(recs, here, btn) {
+  btn.disabled = true; btn.textContent = 'Hazırlanıyor…';
+  try {
+    const list = [];
+    for (const r of recs) { const b = await blobOf(r.id); if (b) list.push(new File([b], r.name, { type: r.type || b.type || 'image/jpeg' })); }
+    photosPending = { files: list, forPath: here, i: 0 };
+    renderGallery();
+  } catch (e) { toast('Hazırlanamadı: ' + (e && e.message || e)); btn.disabled = false; }
+}
+function doSavePhotos() {
+  const P = photosPending, part = P.files.slice(P.i * 40, P.i * 40 + 40);
+  if (!(navigator.canShare && navigator.canShare({ files: part }))) { toast('Bu cihaz çoklu paylaşımı desteklemiyor. Zip kullan.'); return; }
+  navigator.share({ files: part }).then(() => {
+    P.i++; if (P.i * 40 >= P.files.length) { photosPending = null; toast('Tamam'); }
+    renderGallery();
+  }).catch(e => { if (!e || e.name !== 'AbortError') toast('Paylaşım açılamadı: ' + (e && e.message || e)); });
+}
 async function prepareZip(recs, here, name, btn) {
   btn.disabled = true; btn.textContent = 'Zip hazırlanıyor…';
   try {
-    const zip = await makeZip(recs.map(r => ({ name: r.dir + '/' + r.name, blob: r.blob })));
+    const entries = [];
+    for (const r of recs) { const b = await blobOf(r.id); if (b) entries.push({ name: r.dir + '/' + r.name, blob: b }); }
+    const zip = await makeZip(entries);
     if (zipPending) URL.revokeObjectURL(zipPending.url);
     zipPending = { blob: zip, name: sanitize(name) + '.zip', url: URL.createObjectURL(zip), forPath: here };
     renderGallery();
@@ -999,15 +1084,16 @@ function doShare() {
   }
 }
 let viewing = null;
-function openViewer(r) {
-  viewing = r;
-  const vv = $('#vvid'), vi = $('#vimg'), u = URL.createObjectURL(r.blob);
-  if (/\.(mp4|webm|mov)$/i.test(r.name)) { vi.style.display = 'none'; vv.style.display = 'block'; vv.src = u; vv.play().catch(() => {}); }
+async function openViewer(r) {
+  const blob = await blobOf(r.id); if (!blob) return;
+  viewing = { rec: r, blob };
+  const vv = $('#vvid'), vi = $('#vimg'), u = URL.createObjectURL(blob);
+  if (isVidName(r.name)) { vi.style.display = 'none'; vv.style.display = 'block'; vv.src = u; vv.play().catch(() => {}); }
   else { vv.pause(); vv.style.display = 'none'; vi.style.display = 'block'; vi.src = u; }
   $('#viewer').classList.add('open');
 }
 $('#vclose').onclick = () => { $('#vvid').pause(); $('#viewer').classList.remove('open'); };
-$('#vshare').onclick = () => viewing && shareBlob(viewing.blob, viewing.name, viewing.blob.type || 'image/jpeg');
+$('#vshare').onclick = () => viewing && shareBlob(viewing.blob, viewing.rec.name, viewing.rec.type || viewing.blob.type || 'image/jpeg');
 
 /* ============ Başlatma ============ */
 $('#tagbtn').onclick = () => { renderTags(); openSheet('#tagsheet'); };
@@ -1017,7 +1103,8 @@ $('#galbtn').onclick = () => {
   $('#galbody').textContent = 'Yükleniyor…';
   renderGallery().catch(e => { $('#galbody').textContent = 'Kayıtlar açılamadı: ' + (e && e.message || e); });
 };
-$('#shutter').onclick = onShutter;
+$('#shutter').addEventListener('pointerdown', e => { if (mode === 'photo') { e.preventDefault(); shoot(); } });
+$('#shutter').onclick = () => { if (mode === 'video') onShutter(); };
 $('#arbtn').onclick = () => { if (rec) return; const k = Object.keys(ASP); S.aspect = k[(k.indexOf(S.aspect) + 1) % k.length]; save(); };
 $('#mvid').onclick = () => setMode('video');
 $('#mpho').onclick = () => setMode('photo');
@@ -1058,16 +1145,23 @@ async function boot() {
     $('#start').style.display = 'none';
     loadLogo(); renderZoom(); drawOverlay();
     try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {}); } catch (e) {}
-    const all = await dbAll();
-    if (all.length) { const last = all.filter(r => r.name.endsWith('.jpg') && !r.name.endsWith('_temiz.jpg')).pop(); if (last) setThumb(last.blob); }
+    const all = await metaAll(); seedCounters(all);
+    const last = all.filter(r => r.name.endsWith('.jpg') && !r.name.endsWith('_temiz.jpg')).pop();
+    if (last) { const tb = last.thumb || await blobOf(last.id); if (tb) setThumb(tb); }
     booted = true;
     loop();
   } finally { booting = false; }
 }
 applyAspect();
-function loop() { drawStrip(); updateBar(); requestAnimationFrame(loop); }
+let lastHdgDrawn = -1, lastBarT = 0;
+function loop(ts) {
+  ts = ts || 0;
+  if (Math.abs(heading - lastHdgDrawn) > 0.05) { drawStrip(); lastHdgDrawn = heading; }
+  if (ts - lastBarT > 200) { updateBar(); lastBarT = ts; }
+  requestAnimationFrame(loop);
+}
 setInterval(drawOverlay, 1000);
-addEventListener('resize', drawOverlay);
+addEventListener('resize', () => { lastHdgDrawn = -1; drawOverlay(); });
 addEventListener('orientationchange', () => setTimeout(drawOverlay, 350));
 if (window.ResizeObserver) new ResizeObserver(() => drawOverlay()).observe($('#stage'));
 addEventListener('error', e => toast('Hata: ' + e.message));
