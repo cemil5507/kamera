@@ -126,6 +126,12 @@ button.item{width:100%;text-align:left;color:inherit;font:inherit;background:non
 .item.sel{background:rgba(10,132,255,.14)}
 .btn.sm{padding:8px 12px;font-size:13px}
 .selcount{align-self:center;font-size:13px;color:var(--mut)}
+#ctx{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center}
+#ctx.open{display:flex}
+#ctx .cbox{width:100%;max-width:520px;background:var(--panel);border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
+#ctx .ct{font-size:13px;color:var(--mut);text-align:center;word-break:break-all}
+#ctx .btn{width:100%;padding:14px}
+.item{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 #viewer{position:fixed;inset:0;z-index:60;background:#000;display:none;flex-direction:column}
 #viewer.open{display:flex}
 #viewer img,#viewer video{flex:1;min-height:0;object-fit:contain;width:100%;background:#000}
@@ -199,6 +205,7 @@ button.item{width:100%;text-align:left;color:inherit;font:inherit;background:non
   <div class="sh-body" id="galbody"></div>
 </div>
 
+<div id="ctx"><div class="cbox"><div class="ct" id="ctitle"></div><button class="btn" id="cshare">Paylaş</button><button class="btn gray" id="ccancel">Kapat</button></div></div>
 <div id="viewer"><img id="vimg" alt=""><video id="vvid" controls playsinline></video><div class="vb"><button class="btn gray nav" id="vprev" aria-label="Önceki">‹</button><span id="vcount"></span><button class="btn" id="vshare">Paylaş</button><button class="btn gray" id="vclose">Kapat</button><button class="btn gray nav" id="vnext" aria-label="Sonraki">›</button></div></div>
 
 <script>
@@ -295,7 +302,7 @@ const DEF = {
   siteID: 'KBGTI', sectors: ['SEKTÖR-1', 'SEKTÖR-2', 'SEKTÖR-3'], sector: 'SEKTÖR-1', showSector: true, sectorOnPhoto: false,
   tags: ['Montaj Seri No', 'Söküm Seri No', 'Vinç'], activeTags: ['Montaj Seri No'],
   pos: 'br', margin: 0, bar: false,
-  logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9, logoClear: true, logoTol: 0.2,
+  logo: null, logoPos: 'tr', logoScale: 0.18, logoOp: 0.9, logoClear: true, logoTol: 0.2, sound: true,
   font: 'Arial, Helvetica, sans-serif', size: 'small', bold: true,
   color: '#FFFFFF', bg: '#000000', bgOp: 0.70, txOp: 1,
   sidBar: true, bg2: '#E3A800', bg2Op: 0.95, fg2: '#000000', talign: 'c', ver: 3,
@@ -428,6 +435,8 @@ function stripPaint(c, w, h, hd) {
   const span = 120, ppd = w / span, base = h - 4;
   const lo = Math.floor((hd - span / 2) / 5) * 5, hi = Math.ceil((hd + span / 2) / 5) * 5;
   c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.strokeStyle = '#ff2d20'; c.lineWidth = 2.5;           // sabit kırmızı yön çizgisi (şeridin tam boyu)
+  c.beginPath(); c.moveTo(w / 2, 0); c.lineTo(w / 2, h); c.stroke();
   for (let d = lo; d <= hi; d += 5) {
     const x = w / 2 + (d - hd) * ppd, n = ((d % 360) + 360) % 360;
     if (n % 10 === 0) {
@@ -440,8 +449,6 @@ function stripPaint(c, w, h, hd) {
     if (n % 30 === 0) { c.font = '600 11px -apple-system,Arial,sans-serif'; c.fillText(String(n), x, base - 24); }
     if (n % 45 === 0) { c.font = '700 13px -apple-system,Arial,sans-serif'; c.fillText(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][n / 45], x, base - 42); }
   }
-  c.strokeStyle = '#ff2d20'; c.lineWidth = 1.5;
-  c.beginPath(); c.moveTo(w / 2, 0); c.lineTo(w / 2, base - 52); c.stroke();
 }
 let stripW = 0;
 if (window.ResizeObserver) new ResizeObserver(en => { stripW = en[0].contentRect.width; lastHdgDrawn = -1; }).observe(strip);
@@ -778,12 +785,44 @@ function cropRect(A) {
   sw /= digital; sh /= digital;
   return [(vw - sw) / 2, (vh - sh) / 2, sw, sh];
 }
+/* ============ Çekim sesi ============ */
+function wavURL(fn, dur) {
+  const sr = 22050, n = Math.floor(sr * dur), b = new ArrayBuffer(44 + n * 2), v = new DataView(b);
+  const W = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  W(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); W(8, 'WAVE'); W(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  W(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, fn(i / sr))) * 32000, true);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+const click = (t, t0, f, k) => { const x = t - t0; if (x < 0) return 0; return ((Math.random() * 2 - 1) * 0.55 + Math.sin(6.2832 * f * x) * 0.45) * Math.exp(-x * k); };
+let shutterAudio = null, soundWanted = 0, soundOK = false;
+function initSound() {
+  if (shutterAudio) return;
+  shutterAudio = new Audio(wavURL(t => 0.9 * click(t, 0, 2100, 330) + 0.8 * click(t, 0.06, 1100, 260), 0.2));
+  shutterAudio.preload = 'auto';
+}
+function playShutter() {
+  if (!S.sound) return;
+  initSound();
+  try { shutterAudio.currentTime = 0; } catch (e) {}
+  const pr = shutterAudio.play();
+  if (pr && pr.catch) pr.catch(() => { soundWanted = Date.now(); });   // iPhone: ilk dokunuş izni; bırakınca tekrar denenir
+  if (navigator.vibrate) { try { navigator.vibrate(25); } catch (e) {} }
+}
+// iPhone sesi ancak bir dokunuş (bırakma) içinde açar: ilk dokunuşta ses öğesini "uyandır"
+['touchend', 'click'].forEach(ev => document.addEventListener(ev, () => {
+  initSound();
+  if (!soundOK) { shutterAudio.muted = true; shutterAudio.play().then(() => { shutterAudio.pause(); shutterAudio.currentTime = 0; shutterAudio.muted = false; soundOK = true; }).catch(() => { shutterAudio.muted = false; }); }
+  if (soundWanted && Date.now() - soundWanted < 900) { soundWanted = 0; shutterAudio.muted = false; try { shutterAudio.currentTime = 0; shutterAudio.play().catch(() => {}); } catch (e) {} }
+}, true));
 let pendingSaves = 0;
 // Çekim anında sadece görüntü alınır (anında biter); sıkıştırma ve kayıt arka planda sürer. Böylece art arda çekilebilir.
 function shoot() {
   if (!vid.videoWidth) return;
   if (pendingSaves >= 4) { toast('Kayıtlar sürüyor, birkaç saniye bekle'); return; }
-  const fl = $('#flash'); fl.style.opacity = .6; setTimeout(() => fl.style.opacity = 0, 80);
+  const fl = $('#flash'); fl.style.opacity = .85; setTimeout(() => fl.style.opacity = 0, 110);
+  playShutter();
   try {
     const now = new Date(), snap = { lat: G.lat, lon: G.lon, addr: { ...G.addr } }, hdg = heading, accS = G.acc, altS = G.alt;
     const A = stageAspect(), [sx, sy, sw, sh] = cropRect(A);
@@ -1026,6 +1065,7 @@ function render() {
   } else {
     sel(b, 'Fotoğraf çözünürlüğü', 'res', [['fast', 'Hızlı (5 MP, önerilir)'], ['high', 'Yüksek (12 MP, daha yavaş)']], () => { if (!rec && stream) openCamera(lenses[lens]).then(renderZoom).catch(() => toast('Kamera yeniden açılamadı')); });
     sel(b, 'Kamera boyutu', 'aspect', [['4:3', '4:3 (iPhone fotoğraf)'], ['16:9', '16:9 (uzun, tam ekran)'], ['1:1', '1:1 (kare)']]);
+    tog(b, 'Çekim sesi', 'sound');
     tog(b, 'Her çekimde 2 foto (yazılı + temiz)', 'dual');
     b.append(el('p', { className: 'note', textContent: 'Temiz foto aynı klasöre "_temiz" son ekiyle kaydedilir.' }));
     rng(b, 'JPEG kalitesi', 'quality', 0.7, 1, 0.01, pct);
@@ -1145,12 +1185,22 @@ async function renderGallery() {
   body.append(acts);
 
   [...folders.entries()].sort((a, b) => b[1] - a[1]).forEach(([f]) => {
-    body.append(el('button', { type: 'button', className: 'item', onclick: () => { path.push(f); exitSel(); clearPending(); renderGallery(); } }, [
-      el('div', { className: 'ic', textContent: '📁' }), el('div', { className: 'nm', textContent: f })]));
+    const full = here === '' ? f : here + '/' + f;
+    const row = el('button', { type: 'button', className: 'item', onclick: () => { if (justLongPressed()) return; path.push(f); exitSel(); clearPending(); renderGallery(); } }, [
+      el('div', { className: 'ic', textContent: '📁' }), el('div', { className: 'nm', textContent: f })]);
+    longPress(row, () => openCtx('Klasör: ' + f + ' (zip)', async () => {
+      const recs = all.filter(r => r.dir === full || r.dir.startsWith(full + '/'));
+      const entries = [];
+      for (const r of recs) { const b = await blobOf(r.id); if (b) entries.push({ name: r.dir + '/' + r.name, blob: b }); }
+      const zip = await makeZip(entries);
+      return new File([zip], sanitize(f) + '.zip', { type: 'application/zip' });
+    }));
+    body.append(row);
   });
   files.forEach(r => {
     const on = selIds.has(r.id);
     const tap = () => {
+      if (justLongPressed()) return;
       if (!selMode) return openViewer(r);
       if (selIds.has(r.id)) selIds.delete(r.id); else selIds.add(r.id);
       clearPending(); renderGallery();
@@ -1163,10 +1213,54 @@ async function renderGallery() {
     if (selMode) kids.push(el('div', { className: 'chk' + (on ? ' on' : ''), textContent: on ? '✓' : '', onclick: tap }));
     kids.push(ic, el('div', { className: 'nm', onclick: tap }, [r.name, el('small', { textContent: ((r.size || 0) / 1048576).toFixed(1) + ' MB' })]));
     if (!selMode) kids.push(el('button', { className: 'x', textContent: '✕', onclick: async () => { if (confirm('Silinsin mi?')) { await delFile(r.id); renderGallery(); } } }));
-    body.append(el('div', { className: 'item' + (on ? ' sel' : '') }, kids));
+    const prow = el('div', { className: 'item' + (on ? ' sel' : '') }, kids);
+    longPress(prow, () => openCtx(r.name, async () => { const b = await blobOf(r.id); return b && new File([b], r.name, { type: r.type || b.type || 'image/jpeg' }); }));
+    body.append(prow);
   });
   body.scrollTop = keepTop;
 }
+let lpFlag = false, lpUp = 0, ctxAt = 0;
+function longPress(elm, fn, ms = 500) {
+  let t = null, x0 = 0, y0 = 0;
+  const clear = () => { clearTimeout(t); t = null; };
+  elm.addEventListener('pointerdown', e => {
+    if (selMode || (e.button && e.button > 0)) return;
+    x0 = e.clientX; y0 = e.clientY; clear();
+    t = setTimeout(() => { t = null; lpFlag = true; lpUp = 0; if (navigator.vibrate) { try { navigator.vibrate(20); } catch (_) {} } fn(); }, ms);
+  });
+  elm.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) clear(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => elm.addEventListener(n, clear));
+  elm.addEventListener('contextmenu', e => e.preventDefault());
+}
+// Uzun basıştan sonra parmak bırakılınca gelen "tık" yok sayılır (ne kadar uzun basılırsa basılsın)
+document.addEventListener('pointerup', () => { if (lpFlag && !lpUp) lpUp = Date.now(); }, true);
+document.addEventListener('pointercancel', () => { if (lpFlag && !lpUp) lpUp = Date.now(); }, true);
+document.addEventListener('pointerdown', () => { if (lpFlag && lpUp) lpFlag = false; }, true);
+const justLongPressed = () => { if (!lpFlag) return false; if (lpUp && Date.now() - lpUp > 600) { lpFlag = false; return false; } return true; };
+// Basılı tutunca açılan menü. prepare() beklenebilir; paylaşım düğmesi hazır olunca (dokunuşun içinde) menüyü açar.
+let ctxFile = null, ctxTok = 0;
+async function openCtx(title, prepare) {
+  const tok = ++ctxTok, btn = $('#cshare');
+  $('#ctitle').textContent = title; ctxFile = null; ctxAt = Date.now();
+  btn.disabled = true; btn.textContent = 'Hazırlanıyor…'; $('#ctx').classList.add('open');
+  try {
+    const f = await prepare(); if (tok !== ctxTok) return;
+    if (!f) throw new Error('dosya bulunamadı');
+    ctxFile = f; btn.disabled = false;
+    btn.textContent = 'Paylaş' + (f.size > 1048576 ? ' (' + (f.size / 1048576).toFixed(1) + ' MB)' : '');
+  } catch (e) { if (tok === ctxTok) btn.textContent = 'Hazırlanamadı: ' + (e && e.message || e); }
+}
+$('#cshare').onclick = () => {
+  const f = ctxFile; if (!f) return;
+  if (navigator.canShare && navigator.canShare({ files: [f] })) {
+    navigator.share({ files: [f] }).then(() => $('#ctx').classList.remove('open')).catch(e => { if (!e || e.name !== 'AbortError') toast('Paylaşım açılamadı'); });
+  } else {
+    const a = el('a', { href: URL.createObjectURL(f), download: f.name }); document.body.append(a); a.click(); a.remove();
+    toast('Bu cihaz paylaşımı desteklemiyor, dosya indirildi');
+  }
+};
+$('#ccancel').onclick = () => { ctxTok++; $('#ctx').classList.remove('open'); };
+$('#ctx').addEventListener('click', e => { if (e.target === $('#ctx') && Date.now() - ctxAt > 600) { ctxTok++; $('#ctx').classList.remove('open'); } });
 async function shareBlob(blob, name, type) {
   const file = new File([blob], name, { type });
   try {
